@@ -164,6 +164,19 @@ export function flatten(items: Item[]): Cue[] {
   })
 }
 
+export function findCueAncestors(items: Item[], cueId: string): string[] | undefined {
+  for (const item of items) {
+    if (item.kind === 'playlist') {
+      const ancestors = findCueAncestors(item.children, cueId)
+      if (ancestors) return [item.id, ...ancestors]
+    } else if (item.kind === 'text') {
+      if (item.entries.some(entry => entry.id === cueId)) return [item.id]
+    } else if (item.id === cueId) {
+      return []
+    }
+  }
+}
+
 export function updateGroup(group: Group, id: string, update: (group: Group) => Group): Group {
   if (group.id === id) return update(group)
   return {

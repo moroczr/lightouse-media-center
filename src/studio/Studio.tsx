@@ -10,7 +10,7 @@ import {
   controlPlayback, present, resolveCue, saveProject, setBlackout,
 } from '../shared/bridge'
 import {
-  flatten, kindNames, mediaCue, starterProject, updateGroup,
+  findCueAncestors, flatten, kindNames, mediaCue, starterProject, updateGroup,
   type AudienceCue, type Cue, type Display, type Group, type Item, type ItemKind,
   type Project, type ScriptureCue, type TextSlide, welcomePreview,
 } from '../shared/model'
@@ -59,6 +59,7 @@ export default function Studio() {
   const displayOperation = useRef(0)
 
   const active = project.playlists.find(list => list.id === project.activeId) ?? project.playlists[0]
+  const currentCueId = stage.cue?.id
   const sequence = useMemo(() => flatten(active.children), [active])
   const index = sequence.findIndex(item => item.id === cueId)
   const queued = sequence[index]
@@ -101,6 +102,16 @@ export default function Studio() {
     const timer = window.setTimeout(() => setNotice(null), notice.error ? 7200 : 3500)
     return () => window.clearTimeout(timer)
   }, [notice])
+
+  useEffect(() => {
+    if (!kiosk || !currentCueId) return
+    const ancestors = findCueAncestors(active.children, currentCueId)
+    if (!ancestors?.length) return
+
+    setExpanded(current => ancestors.every(id => current.has(id))
+      ? current
+      : new Set([...current, ...ancestors]))
+  }, [active, currentCueId, kiosk, stage.revision])
 
   useEffect(() => {
     if (!queued) return
@@ -461,7 +472,11 @@ export default function Studio() {
                 <h2 id="cues-heading">Cue list</h2>
               </header>
               <div className="cue-scroll">
-                <CueList root={active} selectedId={cueId} liveId={kiosk && !stage.blackout ? stage.cue?.id ?? null : null} expanded={expanded}
+                <CueList root={active} selectedId={cueId} expanded={expanded}
+                  current={stage.cue ? {
+                    id: stage.cue.id,
+                    status: stage.blackout ? 'Blackout' : kiosk ? 'Live' : 'Staged',
+                  } : null}
                   onToggle={id => setExpanded(current => {
                     const next = new Set(current)
                     if (next.has(id)) next.delete(id)
@@ -498,7 +513,10 @@ export default function Studio() {
         {editor.kind === 'kiosk-background' && <KioskBackgroundEditor background={background} loadError={backgroundError} />}
         {editor.kind === 'remove' && <div className="editor">
           <p>Remove <strong>{editor.item.title}</strong>{editor.item.kind === 'text' ? ' and its slides' : editor.item.kind === 'playlist' && editor.item.children.length ? ' and its cues' : ''}?</p>
-          <div className="dialog-actions"><button className="button" onClick={() => setEditor(null)}>Cancel</button><button className="button button-danger" onClick={() => removeItem(editor.item, editor.parent)}>Remove</button></div>
+          <div className="dialog-actions">
+            <button className="button" onClick={() => setEditor(null)}>Cancel</button>
+            <button className="button button-danger" onClick={() => removeItem(editor.item, editor.parent)}>Remove</button>
+          </div>
         </div>}
       </Dialog>}
     </div>

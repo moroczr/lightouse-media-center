@@ -22,6 +22,7 @@ export function Menu({ label, trigger, children, primary = false }: {
   label: string; trigger: ReactNode; children: ReactNode; primary?: boolean;
 }) {
   const details = useRef<HTMLDetailsElement>(null)
+  const stopPositioning = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     function closeOutside(event: PointerEvent) {
@@ -30,23 +31,62 @@ export function Menu({ label, trigger, children, primary = false }: {
     }
 
     document.addEventListener('pointerdown', closeOutside)
-    return () => document.removeEventListener('pointerdown', closeOutside)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside)
+      stopPositioning.current?.()
+    }
   }, [])
 
   return (
     <details className="menu" ref={details} onToggle={event => {
       const menu = event.currentTarget
-      const scrollArea = menu.closest('.cue-scroll')
-      const panel = menu.querySelector('.menu-body')
-      if (!menu.open || !scrollArea || !panel) return
+      stopPositioning.current?.()
+      stopPositioning.current = null
+      if (!menu.open) {
+        menu.style.removeProperty('--menu-visibility')
+        return
+      }
 
-      const container = scrollArea.getBoundingClientRect()
-      const trigger = menu.getBoundingClientRect()
-      const above = trigger.top - Math.max(0, container.top) - 6
-      const below = Math.min(window.innerHeight, container.bottom) - trigger.bottom - 6
-      const openUp = below < panel.scrollHeight && above > below
-      menu.classList.toggle('menu--opens-up', openUp)
-      menu.style.setProperty('--menu-max-height', `${Math.max(32, Math.floor(openUp ? above : below))}px`)
+      const scrollArea = menu.closest('.cue-scroll')
+      const panel = menu.querySelector<HTMLElement>('.menu-body')
+      if (!scrollArea || !panel) return
+
+      const positionPanel = () => {
+        if (!menu.open) return
+        const trigger = menu.getBoundingClientRect()
+        const scrollBounds = scrollArea.getBoundingClientRect()
+        const viewportHeight = window.innerHeight
+        if (trigger.bottom <= Math.max(0, scrollBounds.top)
+          || trigger.top >= Math.min(viewportHeight, scrollBounds.bottom)) {
+          menu.open = false
+          return
+        }
+
+        const gap = 6
+        const above = trigger.top - gap * 2
+        const below = viewportHeight - trigger.bottom - gap * 2
+        const panelHeight = panel.scrollHeight + panel.offsetHeight - panel.clientHeight
+        const opensUp = below < panelHeight && above > below
+        const left = Math.max(gap, Math.min(trigger.right, window.innerWidth - gap) - panel.offsetWidth)
+
+        menu.style.setProperty('--menu-left', `${left}px`)
+        menu.style.setProperty('--menu-top', opensUp ? 'auto' : `${trigger.bottom + gap}px`)
+        menu.style.setProperty('--menu-bottom', opensUp ? `${viewportHeight - trigger.top + gap}px` : 'auto')
+        menu.style.setProperty('--menu-max-height', `${Math.max(0, opensUp ? above : below)}px`)
+        menu.style.setProperty('--menu-visibility', 'visible')
+      }
+
+      function followScroll(event: Event) {
+        if (event.target !== panel) positionPanel()
+      }
+
+      positionPanel()
+      document.addEventListener('scroll', followScroll, true)
+      window.addEventListener('resize', positionPanel)
+      stopPositioning.current = () => {
+        document.removeEventListener('scroll', followScroll, true)
+        window.removeEventListener('resize', positionPanel)
+      }
     }} onKeyDown={event => {
       if (event.key === 'Escape' && details.current?.open) {
         details.current.open = false
@@ -66,7 +106,7 @@ export function Menu({ label, trigger, children, primary = false }: {
 interface CueListProps {
   root: Group
   selectedId: string | null
-  liveId: string | null
+  current: { id: string; status: 'Live' | 'Staged' | 'Blackout' } | null
   expanded: Set<string>
   onToggle: (id: string) => void
   onCue: (id: string | undefined, branchId?: string) => void
@@ -88,11 +128,11 @@ function CueRow({ item, depth, subtitle, cues, props, children }: {
   const open = !!cues && props.expanded.has(item.id)
   const cueId = cues ? cues[0]?.id : item.id
   const contains = (id: string | null) => item.id === id || (!open && cues?.some(cue => cue.id === id))
-  const live = contains(props.liveId)
+  const current = props.current && contains(props.current.id) ? props.current : null
   const next = contains(props.selectedId)
 
   return (
-    <div className={`cue-row${live ? ' cue-row--live' : ''}${next ? ' cue-row--next' : ''}`} style={{ '--depth': depth } as React.CSSProperties}>
+    <div className={`cue-row${current ? ' cue-row--current' : ''}${next ? ' cue-row--next' : ''}`} style={{ '--depth': depth } as React.CSSProperties}>
       {cues ? (
         <button className="cue-expand" aria-expanded={open} aria-label={`${open ? 'Collapse' : 'Expand'} ${item.title}`} onClick={() => props.onToggle(item.id)}>
           {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
@@ -100,6 +140,7 @@ function CueRow({ item, depth, subtitle, cues, props, children }: {
       ) : <span className="cue-rail" />}
       <button
         className="cue-select"
+        aria-current={current ? true : undefined}
         title={cueId ? `Cue ${item.title} (double-click to go live)` : `Cue ${item.title}`}
         onClick={() => props.onCue(cueId, cues ? item.id : undefined)}
         onDoubleClick={cueId ? () => props.onGoLive(cueId) : undefined}
@@ -108,7 +149,7 @@ function CueRow({ item, depth, subtitle, cues, props, children }: {
         <span className="cue-title">{item.title}</span>
         {subtitle && <span className="cue-kind">{subtitle}</span>}
       </button>
-      {live && <span className="cue-badge live">Live</span>}
+      {current && <span className="cue-badge current">{current.status}</span>}
       {next && <span className="cue-badge next">Next</span>}
       {children}
     </div>
@@ -143,7 +184,7 @@ function GroupRows({ group, depth, props }: { group: Group; depth: number; props
               : <button className="empty-group" style={{ marginLeft: 48 + depth * 23 }} onClick={() => props.onAdd(item.id)}><Plus size={14} /> Add a cue to {item.title}</button>)}
             {item.kind === 'text' && open && (
               <ul className="cue-rows" aria-label={`Slides in ${item.title}`}>
-                {cues?.map(cue => <li key={cue.id}><CueRow item={cue} depth={depth + 1} props={props} /></li>)}
+                {cues?.map(entry => <li key={entry.id}><CueRow item={entry} depth={depth + 1} props={props} /></li>)}
               </ul>
             )}
           </li>

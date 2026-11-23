@@ -134,8 +134,11 @@ button.icon-button:disabled { opacity: .35; }
   box-shadow: 0 12px 28px #07050d99;
 }
 .appbar .menu-body { left: 0; right: auto; }
-.cue-scroll .menu-body { max-height: var(--menu-max-height); overflow: auto; }
-.menu--opens-up .menu-body { top: auto; bottom: calc(100% + 6px); }
+.cue-scroll .menu-body {
+  position: fixed; top: var(--menu-top); bottom: var(--menu-bottom); left: var(--menu-left); right: auto;
+  max-height: var(--menu-max-height); overflow: auto; overscroll-behavior: contain;
+  visibility: var(--menu-visibility, hidden);
+}
 .menu-body button {
   background: transparent; border: 0; border-radius: 6px; width: 100%; text-align: left; white-space: nowrap;
   padding: 8px; color: #ded6eb; display: flex; gap: 9px; align-items: center; font-size: 12px; font-weight: 740;
@@ -268,8 +271,8 @@ button.icon-button:disabled { opacity: .35; }
   border: 1px solid transparent; border-radius: 7px;
 }
 .cue-row:hover { background: #221e2d; }
-.cue-row--live { background: #32222e; }
 .cue-row--next, .cue-row--next:hover { background: #2e2440; border-color: #543e6e; }
+.cue-row--current, .cue-row--current:hover { background: #492735; border-color: #aa586b; box-shadow: inset 3px 0 #ff9ba8; }
 .cue-rail { width: 19px; position: relative; height: 22px; flex: 0 0 auto; }
 .cue-rail::before { content: ''; position: absolute; top: 9px; left: 8px; width: 5px; height: 5px; border-radius: 50%; background: #6f617d; }
 .cue-expand { display: grid; place-items: center; border: 0; background: transparent; color: #ad9cc1; border-radius: 4px; padding: 0; width: 19px; height: 26px; flex: 0 0 auto; }
@@ -286,7 +289,7 @@ button.icon-button:disabled { opacity: .35; }
 .cue-row .icon-button { min-width: 27px; min-height: 27px; border-color: transparent; background: transparent; }
 .cue-badge { border-radius: 4px; padding: 3px 6px; font-size: 8px; text-transform: uppercase; letter-spacing: .6px; font-weight: 900; }
 .cue-badge.next { background: #533d70; color: #e6cfff; }
-.cue-badge.live { background: #603949; color: #ffd0d7; }
+.cue-badge.current { background: #7a394d; color: #ffe3e9; }
 .empty-group { display: flex; align-items: center; gap: 6px; border: 0; color: var(--accent); background: transparent; font-size: 11px; padding: 7px; }
 .empty-list { display: grid; place-items: center; padding: 30px; gap: 10px; font-size: 13px; color: var(--muted); }
 
