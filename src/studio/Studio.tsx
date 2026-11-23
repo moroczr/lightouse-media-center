@@ -10,9 +10,9 @@ import {
   controlPlayback, present, resolveCue, saveProject, setBlackout,
 } from '../shared/bridge'
 import {
-  findItem, flatten, kindNames, mediaCue, starterProject, updateGroup,
+  flatten, kindNames, mediaCue, starterProject, updateGroup,
   type AudienceCue, type Cue, type Display, type Group, type Item, type ItemKind,
-  type Project, welcomePreview,
+  type Project, type ScriptureCue, type TextSlide, welcomePreview,
 } from '../shared/model'
 import { CueList, ItemIcon, Menu } from './CueList'
 import { Dialog, NameEditor, TextEditor } from './Editors'
@@ -24,8 +24,8 @@ import { Preview } from './Preview'
 type Editor =
   | { kind: 'kiosk-background' }
   | { kind: 'choose'; parent: string }
-  | { kind: 'text'; parent: string; existing?: Extract<Cue, { kind: 'text' }> }
-  | { kind: 'scripture'; parent: string; existing?: Extract<Cue, { kind: 'scripture' }> }
+  | { kind: 'text'; parent: string; existing?: TextSlide }
+  | { kind: 'scripture'; parent: string; existing?: ScriptureCue }
   | { kind: 'playlist'; parent: string | null }
   | { kind: 'media'; parent: string; filter?: 'video' | 'audio' }
   | { kind: 'rename'; parent: string | null; existing: Item }
@@ -41,7 +41,7 @@ export default function Studio() {
   const [project, setProject] = useState<Project>(starterProject)
   const [loaded, setLoaded] = useState(false)
   const [saveError, setSaveError] = useState('')
-  const [cueId, setCueId] = useState<string | null>(desktop ? 'welcome' : 'opening-scripture')
+  const [cueId, setCueId] = useState<string | null>(desktop ? welcomePreview.id : 'opening-scripture')
   const [displayList, setDisplayList] = useState<Display[]>([])
   const [kiosk, setKiosk] = useState(false)
   const [displayBusy, setDisplayBusy] = useState(false)
@@ -168,10 +168,9 @@ export default function Studio() {
     setCueId(flatten(root.children)[0]?.id ?? null)
   }
 
-  function cueItem(item: Item) {
-    const first = item.kind === 'playlist' ? flatten(item.children)[0] : item
-    if (item.kind === 'playlist') setExpanded(current => new Set(current).add(item.id))
-    if (first) setCueId(first.id)
+  function cueItem(id: string | undefined, branchId?: string) {
+    if (branchId) setExpanded(current => new Set(current).add(branchId))
+    if (id) setCueId(id)
     else tell('This playlist group is empty.')
   }
 
@@ -204,6 +203,11 @@ export default function Studio() {
 
   function goLive() {
     if (queued && next) void send(queued, true)
+  }
+
+  function takeCue(id: string) {
+    const cue = sequence.find(item => item.id === id)
+    if (cue) void send(cue, true)
   }
 
   async function toggleKiosk() {
@@ -249,16 +253,30 @@ export default function Studio() {
 
   function addItem(parent: string, item: Item) {
     updatePlaylist(root => updateGroup(root, parent, group => ({ ...group, children: [...group.children, item] })))
-    if (parent !== active.id) setExpanded(current => new Set(current).add(parent))
-    if (item.kind !== 'playlist') setCueId(item.id)
+    if (parent !== active.id || item.kind === 'text') {
+      setExpanded(current => {
+        const next = new Set(current)
+        if (parent !== active.id) next.add(parent)
+        if (item.kind === 'text') next.add(item.id)
+        return next
+      })
+    }
+    if (item.kind !== 'playlist') setCueId(flatten([item])[0]?.id ?? null)
     setEditor(null)
   }
 
-  function saveCue(parent: string, cue: Cue, editing: boolean) {
-    if (!editing) { addItem(parent, cue); return }
+  function saveItem(parent: string, item: Item, existing?: Item) {
+    if (!existing) { addItem(parent, item); return }
     updatePlaylist(root => updateGroup(root, parent, group => ({
-      ...group, children: group.children.map(item => item.id === cue.id ? cue : item),
+      ...group, children: group.children.map(child => child.id === item.id ? item : child),
     })))
+    if (item.kind === 'text' && existing.kind === 'text') {
+      setExpanded(current => new Set(current).add(item.id))
+      const oldIndex = existing.entries.findIndex(entry => entry.id === cueId)
+      if (oldIndex >= 0 && !item.entries.some(entry => entry.id === cueId)) {
+        setCueId(item.entries[Math.min(oldIndex, item.entries.length - 1)]?.id ?? null)
+      }
+    }
     setEditor(null)
   }
 
@@ -309,7 +327,7 @@ export default function Studio() {
       setProject(current => ({ ...current, playlists: remaining, activeId: remaining[0].id }))
       setCueId(flatten(remaining[0].children)[0]?.id ?? null)
     } else {
-      const removedSelected = cueId === item.id || (item.kind === 'playlist' && !!findItem(item.children, cueId))
+      const removedSelected = flatten([item]).some(cue => cue.id === cueId)
       const withoutItem = (root: Group) => updateGroup(root, parent, group => ({
         ...group, children: group.children.filter(child => child.id !== item.id),
       }))
@@ -450,7 +468,7 @@ export default function Studio() {
                     else next.add(id)
                     return next
                   })}
-                  onCue={cueItem} onEdit={editItem} onMove={moveItem}
+                  onCue={cueItem} onGoLive={takeCue} onEdit={editItem} onMove={moveItem}
                   onAdd={parent => setEditor({ kind: 'choose', parent })}
                   onRemove={(item, parent) => setEditor({ kind: 'remove', parent, item })}
                 />
@@ -471,15 +489,15 @@ export default function Studio() {
         </div>}
         {editor.kind === 'playlist' && <NameEditor label="Playlist name" action="Create playlist" onSave={name => addPlaylist(name, editor.parent)} />}
         {editor.kind === 'rename' && <NameEditor label="Name" action="Save changes" existing={editor.existing} onSave={name => rename(editor.existing, editor.parent, name)} />}
-        {editor.kind === 'text' && <TextEditor existing={editor.existing} onSave={cue => saveCue(editor.parent, cue, !!editor.existing)} onLive={cue => void send(cue, false)} />}
-        {editor.kind === 'scripture' && <ScriptureEditor existing={editor.existing} busy={transmitting} onSave={cue => saveCue(editor.parent, cue, !!editor.existing)} onLive={cue => void send(cue, false)} />}
+        {editor.kind === 'text' && <TextEditor existing={editor.existing} onSave={slide => saveItem(editor.parent, slide, editor.existing)} onLive={cue => void send(cue, false)} />}
+        {editor.kind === 'scripture' && <ScriptureEditor existing={editor.existing} busy={transmitting} onSave={cue => saveItem(editor.parent, cue, editor.existing)} onLive={cue => void send(cue, false)} />}
         {editor.kind === 'media' && <MediaBrowser sources={project.sources} initialFilter={editor.filter}
           view={mediaView} onViewChange={setMediaView} onAddFolder={addSource} busy={transmitting}
           onSave={file => addItem(editor.parent, mediaCue(file))} onLive={file => void send(mediaCue(file), false)}
         />}
         {editor.kind === 'kiosk-background' && <KioskBackgroundEditor background={background} loadError={backgroundError} />}
         {editor.kind === 'remove' && <div className="editor">
-          <p>Remove <strong>{editor.item.title}</strong>{editor.item.kind === 'playlist' && editor.item.children.length ? ' and its cues' : ''}?</p>
+          <p>Remove <strong>{editor.item.title}</strong>{editor.item.kind === 'text' ? ' and its slides' : editor.item.kind === 'playlist' && editor.item.children.length ? ' and its cues' : ''}?</p>
           <div className="dialog-actions"><button className="button" onClick={() => setEditor(null)}>Cancel</button><button className="button button-danger" onClick={() => removeItem(editor.item, editor.parent)}>Remove</button></div>
         </div>}
       </Dialog>}

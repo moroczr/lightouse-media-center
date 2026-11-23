@@ -26,6 +26,8 @@ enum Content {
     Text {
         text: String,
         theme: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        caption: Option<String>,
     },
     Scripture {
         text: String,

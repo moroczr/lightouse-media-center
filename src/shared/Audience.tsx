@@ -35,7 +35,7 @@ function SlideText({ cue }: { cue: Extract<AudienceCue, { text: string }> }) {
   const slide = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const [heading, ...rest] = cue.text.split('\n')
-  const welcomeLayout = cue.kind === 'text' && rest.length === 1 && heading.length < 35 && rest[0].length < 80
+  const welcomeLayout = cue.kind === 'text' && !cue.caption && rest.length === 1 && heading.length < 35 && rest[0].length < 80
   const textSize = cue.text.length < 75 ? 'large' : cue.text.length < 190 ? 'medium' : 'small'
 
   useLayoutEffect(() => {

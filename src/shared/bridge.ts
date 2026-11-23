@@ -2,7 +2,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import {
   type AudienceCue, type Book, type Cue, type Display, type KioskBackground, type MediaFile, type PlaybackAction, type Project,
-  type Source, type Stage, type Translation, type Verse, emptyStage, isMedia,
+  type SavedProject, type Source, type Stage, type Translation, type Verse, emptyStage, isMedia, normalizeProject,
 } from './model'
 
 export const desktop = isTauri()
@@ -49,9 +49,10 @@ export const bible = {
 }
 
 export async function loadProject(): Promise<Project | null> {
-  if (desktop) return invoke('load_project')
-  const json = localStorage.getItem(projectKey)
-  return Promise.resolve(json ? JSON.parse(json) : null)
+  const saved: SavedProject | null = desktop
+    ? await invoke('load_project')
+    : JSON.parse(localStorage.getItem(projectKey) ?? 'null')
+  return saved ? normalizeProject(saved) : null
 }
 
 export function saveProject(project: Project): Promise<void> {
@@ -334,7 +335,7 @@ async function mediaUrl(path: string) {
 
 export async function resolveCue(cue: Cue): Promise<AudienceCue> {
   const base = { id: cue.id, title: cue.title, kind: cue.kind }
-  if (cue.kind === 'text') return { ...base, kind: cue.kind, theme: cue.theme, text: cue.text }
+  if (cue.kind === 'text') return cue
   if (cue.kind === 'scripture') {
     const { translation, book, chapter, verse } = cue.reference
     const chapterVerses = await bible.verses(translation, book, chapter)

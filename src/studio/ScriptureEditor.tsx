@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import { BookOpen, ChevronDown, ChevronUp, Search } from 'lucide-react'
 import { bible } from '../shared/bridge'
-import { type Book, type Cue, type Theme, type Translation, type Verse } from '../shared/model'
+import { type Book, type ScriptureCue, type Theme, type Translation, type Verse } from '../shared/model'
 import {
   deleteReferenceSegment, lookupReference, normalizeBook, readVerseWindow, referenceSuggestions, verseLabel, verseWindowSize,
   type PassageVerse, type ReferenceSuggestion,
@@ -16,10 +16,10 @@ type VerseWindow = Awaited<ReturnType<typeof readVerseWindow>>
 type LoadResult<T> = { key: string; values: T[] } | { key: string; error: string }
 
 export function ScriptureEditor({ existing, busy, onSave, onLive }: {
-  existing?: Extract<Cue, { kind: 'scripture' }>;
+  existing?: ScriptureCue;
   busy: boolean;
-  onSave: (cue: Cue) => void;
-  onLive: (cue: Cue) => void;
+  onSave: (cue: ScriptureCue) => void;
+  onLive: (cue: ScriptureCue) => void;
 }) {
   const initial = existing?.reference
   const [translation, setTranslation] = useState(initial?.translation ?? 'WEBP')
@@ -252,7 +252,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
     })
   }
 
-  function makeCue(): Cue | undefined {
+  function makeCue(): ScriptureCue | undefined {
     if (busy || !selected) return
     return {
       id: existing?.id ?? crypto.randomUUID(), title, kind: 'scripture', theme,

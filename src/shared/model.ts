@@ -40,14 +40,19 @@ interface ItemBase {
   title: string
 }
 
-export type Cue = ItemBase & (
-  | { kind: 'text'; text: string; theme: Theme }
-  | { kind: 'scripture'; reference: Reference; theme: Theme }
-  | { kind: 'video' | 'audio'; path: string }
-)
+export interface TextEntry {
+  id: string
+  text: string
+}
 
+export type TextSlide = ItemBase & { kind: 'text'; theme: Theme; entries: TextEntry[]; showCaption?: false }
+export type TextCue = ItemBase & { kind: 'text'; text: string; theme: Theme; caption?: string }
+export type ScriptureCue = ItemBase & { kind: 'scripture'; reference: Reference; theme: Theme }
+type MediaCue = ItemBase & { kind: 'video' | 'audio'; path: string }
+
+export type Cue = TextCue | ScriptureCue | MediaCue
 export type Group = ItemBase & { kind: 'playlist'; children: Item[] }
-export type Item = Cue | Group
+export type Item = TextSlide | ScriptureCue | MediaCue | Group
 export type ItemKind = Item['kind']
 
 export interface Project {
@@ -119,18 +124,44 @@ export const kindNames: Record<ItemKind, string> = {
   playlist: 'Nested playlist',
 }
 
-export function flatten(items: Item[]): Cue[] {
-  return items.flatMap(item => item.kind === 'playlist' ? flatten(item.children) : [item])
+type LegacyTextSlide = Omit<TextCue, 'caption'>
+type SavedGroup = Omit<Group, 'children'> & { children: (Exclude<Item, Group> | LegacyTextSlide | SavedGroup)[] }
+export type SavedProject = Omit<Project, 'playlists'> & { playlists: SavedGroup[] }
+
+function migrateTextSlide({ id, title, text, theme }: LegacyTextSlide): TextSlide {
+  return { id, title, kind: 'text', theme, entries: [{ id: `${id}:entry`, text }], showCaption: false }
 }
 
-export function findItem(items: Item[], id: string | null): Item | undefined {
-  for (const item of items) {
-    if (item.id === id) return item
-    if (item.kind === 'playlist') {
-      const found = findItem(item.children, id)
-      if (found) return found
+export function normalizeProject(project: SavedProject): Project {
+  function migrateGroup(group: SavedGroup): Group {
+    return {
+      ...group,
+      children: group.children.map(item => {
+        if (item.kind === 'playlist') return migrateGroup(item)
+        if (item.kind === 'text' && 'text' in item) return migrateTextSlide(item)
+        return item
+      }),
     }
   }
+  return { ...project, playlists: project.playlists.map(migrateGroup) }
+}
+
+export function textSlideCues(slide: TextSlide): TextCue[] {
+  return slide.entries.map(entry => ({
+    ...entry,
+    kind: 'text',
+    title: entry.text.trimStart().split('\n', 1)[0].slice(0, 100),
+    caption: slide.showCaption === false ? undefined : slide.title,
+    theme: slide.theme,
+  }))
+}
+
+export function flatten(items: Item[]): Cue[] {
+  return items.flatMap<Cue>(item => {
+    if (item.kind === 'playlist') return flatten(item.children)
+    if (item.kind === 'text') return textSlideCues(item)
+    return [item]
+  })
 }
 
 export function updateGroup(group: Group, id: string, update: (group: Group) => Group): Group {
@@ -141,7 +172,7 @@ export function updateGroup(group: Group, id: string, update: (group: Group) => 
   }
 }
 
-export function mediaCue(file: MediaFile): Cue {
+export function mediaCue(file: MediaFile): MediaCue {
   return { id: crypto.randomUUID(), kind: file.kind, title: file.name.replace(/\.[^.]+$/, ''), path: file.path }
 }
 
@@ -154,21 +185,15 @@ export function clockTime(seconds: number): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`
 }
 
-export const welcome: Cue = {
+const welcome = migrateTextSlide({
   id: 'welcome',
   title: 'Welcome',
   kind: 'text',
   text: 'Welcome\nWe’re glad you’re here',
   theme: 'twilight',
-}
+})
 
-export const welcomePreview: AudienceCue = {
-  id: welcome.id,
-  title: welcome.title,
-  kind: 'text',
-  text: welcome.text,
-  theme: welcome.theme,
-}
+export const welcomePreview: AudienceCue = textSlideCues(welcome)[0]
 
 export const starterProject: Project = {
   version: 1,
@@ -194,11 +219,11 @@ export const starterProject: Project = {
           kind: 'playlist',
           title: 'Worship',
           children: [
-            { id: 'call', title: 'Call to Worship', kind: 'text', text: 'Let us worship together', theme: 'twilight' },
-            { id: 'prayer', title: 'Prayer', kind: 'text', text: 'Let us pray', theme: 'plain' },
+            migrateTextSlide({ id: 'call', title: 'Call to Worship', kind: 'text', text: 'Let us worship together', theme: 'twilight' }),
+            migrateTextSlide({ id: 'prayer', title: 'Prayer', kind: 'text', text: 'Let us pray', theme: 'plain' }),
           ],
         },
-        { id: 'announcements', title: 'Announcements', kind: 'text', text: 'Announcements', theme: 'violet' },
+        migrateTextSlide({ id: 'announcements', title: 'Announcements', kind: 'text', text: 'Announcements', theme: 'violet' }),
         {
           id: 'closing',
           kind: 'playlist',
