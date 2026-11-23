@@ -1,0 +1,82 @@
+{
+  "version": "2.0.0",
+  "options": {
+    "cwd": "${workspaceFolder}"
+  },
+  "tasks": [
+    {
+      "label": "Nemesa: Run",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "tauri", "dev"],
+      "windows": {
+        "command": "npm.cmd"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Nemesa: Build Release",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "tauri", "build"],
+      "osx": {
+        "args": ["run", "tauri", "build", "--", "--bundles", "app"]
+      },
+      "windows": {
+        "command": "npm.cmd",
+        "args": ["run", "tauri", "build", "--", "--bundles", "nsis"]
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Nemesa: Build Debug Binary",
+      "type": "shell",
+      "command": "cargo",
+      "args": [
+        "build",
+        "--locked",
+        "--no-default-features",
+        "--manifest-path",
+        "src-tauri/Cargo.toml",
+        "--target-dir",
+        "src-tauri/target"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Nemesa: Start Vite",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "dev"],
+      "windows": {
+        "command": "npm.cmd"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": {
+          "regexp": "^([^:]+):(\\d+):\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "message": 3
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^> .* dev\\s*$",
+          "endsPattern": "Local:.*http://127\\.0\\.0\\.1:1420/"
+        }
+      }
+    },
+    {
+      "label": "Nemesa: Prepare Rust Debugging",
+      "dependsOrder": "sequence",
+      "dependsOn": ["Nemesa: Build Debug Binary", "Nemesa: Start Vite"],
+      "hide": true,
+      "problemMatcher": []
+    }
+  ]
+}
