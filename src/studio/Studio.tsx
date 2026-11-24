@@ -359,17 +359,17 @@ export default function Studio() {
     setEditor(null)
   }
 
-  function saveLibraryTextSlide(parent: string, slide: TextSlide, name: string, path: string) {
+  function saveLibraryTextSlide(parent: string, slide: TextSlide, path: string) {
     if (!loaded) return saveError || 'Wait for the workspace to finish loading.'
     const normalized = normalizeTextSlideFolder(path)
-    const inFolder = project.textLibrary.filter(item => item.folder.toLocaleLowerCase() === normalized.toLocaleLowerCase())
-    const duplicate = inFolder.some(item => item.slide.id !== slide.id && item.name.toLocaleLowerCase() === name.toLocaleLowerCase())
-    const folder = inFolder[0]?.folder ?? normalized
-    if (duplicate) return 'A text slide with this name already exists in this folder.'
-    setProject(current => ({
-      ...current,
-      textLibrary: [...current.textLibrary.filter(item => item.slide.id !== slide.id), { name, folder, slide }],
-    }))
+    setProject(current => {
+      const folder = current.textLibrary.find(item => item.folder.toLocaleLowerCase() === normalized.toLocaleLowerCase())?.folder
+        ?? normalized
+      return {
+        ...current,
+        textLibrary: [...current.textLibrary.filter(item => item.slide.id !== slide.id), { folder, slide }],
+      }
+    })
     setEditor({ kind: 'text-library', parent, selectedId: slide.id })
   }
 
@@ -623,14 +623,14 @@ export default function Studio() {
             library={editor.existing ? undefined : {
               folder: editor.folder ?? '',
               onBack: () => setEditor({ kind: 'text-library', parent: editor.parent, folder: editor.folder }),
-              onSave: (slide, name, folder) => saveLibraryTextSlide(editor.parent, slide, name, folder),
+              onSave: (slide, folder) => saveLibraryTextSlide(editor.parent, slide, folder),
             }} />
         )}
         {editor.kind === 'text-library-edit' && (
           <TextEditor existing={editor.item.slide} library={{
-            name: editor.item.name, folder: editor.item.folder,
+            folder: editor.item.folder,
             onBack: () => setEditor({ kind: 'text-library', parent: editor.parent, selectedId: editor.item.slide.id }),
-            onSave: (slide, name, folder) => saveLibraryTextSlide(editor.parent, slide, name, folder),
+            onSave: (slide, folder) => saveLibraryTextSlide(editor.parent, slide, folder),
           }} />
         )}
         {editor.kind === 'scripture' && <ScriptureEditor existing={editor.existing} busy={transmitting} onSave={cue => saveItem(editor.parent, cue, editor.existing)} onLive={cue => void send(cue, false)} />}

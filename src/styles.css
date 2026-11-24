@@ -323,11 +323,6 @@ button.icon-button:disabled { opacity: .35; }
 .text-entry-actions { display: flex; gap: 4px; }
 .text-entry-actions .icon-button { min-width: 28px; min-height: 28px; }
 .text-entry-add, .text-library-back { justify-self: start; }
-.text-library-fields {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); min-width: 0;
-  gap: 8px; margin: 0; padding: 9px; border: 1px solid #493c55; border-radius: 8px;
-}
-.text-library-fields legend { padding: 0 5px; font-weight: 780; }
 .text-library-toolbar, .text-library-path, .text-library-path > span { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .text-library-toolbar .search-box { flex: 1 1 180px; }
 .text-library-path .button { min-height: 28px; padding-inline: 5px; }
@@ -500,7 +495,6 @@ button.icon-button:disabled { opacity: .35; }
 }
 
 @media (max-width: 500px) {
-  .text-library-fields { grid-template-columns: minmax(0, 1fr); }
   .step-navigation .button { padding-inline: 4px; font-size: 10px; }
   .step-navigation svg { display: none; }
   .scripture-toolbar { grid-template-columns: minmax(0, 1fr); }

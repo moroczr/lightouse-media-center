@@ -40,8 +40,8 @@ export function TextSlideLibrary({
       ? [item.folder.slice(prefix.length).split('/', 1)[0]] : []
   )))].sort((a, b) => a.localeCompare(b))
   const shown = items.filter(item => search
-    ? `${item.folder}/${item.name}`.toLocaleLowerCase().includes(search)
-    : item.folder === folder).sort((a, b) => a.name.localeCompare(b.name) || a.folder.localeCompare(b.folder))
+    ? `${item.folder}/${item.slide.title}`.toLocaleLowerCase().includes(search)
+    : item.folder === folder).sort((a, b) => a.slide.title.localeCompare(b.slide.title) || a.folder.localeCompare(b.folder))
   const rows = [
     ...subfolders.map(name => ({ kind: 'folder', key: `folder:${prefix}${name}`, name, path: prefix + name } as const)),
     ...shown.map(item => ({ kind: 'slide', key: `slide:${item.slide.id}`, item } as const)),
@@ -154,7 +154,7 @@ export function TextSlideLibrary({
                       <ChevronRight size={16} aria-hidden="true" />
                     </> : <>
                       <ItemIcon kind="text" />
-                      <span className="media-result-text"><strong>{row.item.name}</strong><span>{row.item.folder || 'Library'}</span></span>
+                      <span className="media-result-text"><strong>{row.item.slide.title}</strong><span>{row.item.folder || 'Library'}</span></span>
                       <span className="media-result-type">{count} {count === 1 ? 'slide' : 'slides'}</span>
                     </>}
                   </button>

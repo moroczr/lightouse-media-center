@@ -83,15 +83,13 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
   onSave?: (slide: TextSlide) => void
   onLive?: (slide: TextSlide) => void
   library?: {
-    name?: string
     folder: string
-    onSave: (slide: TextSlide, name: string, folder: string) => string | undefined
+    onSave: (slide: TextSlide, folder: string) => string | undefined
     onBack: () => void
   }
 }) {
   const [id] = useState(() => existing?.id ?? crypto.randomUUID())
-  const [caption, setCaption] = useState(existing?.captionFromFirstEntry ? '' : existing?.caption ?? existing?.title ?? '')
-  const [name, setName] = useState(library?.name ?? '')
+  const [caption, setCaption] = useState(existing?.captionFromFirstEntry ? '' : existing?.title ?? '')
   const [folder, setFolder] = useState(library?.folder ?? '')
   const [libraryError, setLibraryError] = useState('')
   const [entries, setEntries] = useState<TextEntry[]>(() => existing?.entries ?? [{ id: crypto.randomUUID(), text: '' }])
@@ -103,18 +101,15 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
   const slide: TextSlide = {
     id,
     kind: 'text',
-    title: existing?.caption === undefined
-      ? explicitCaption || textCueTitle(entries[0]?.text ?? '') || kindNames.text : existing.title,
-    caption: existing?.caption === undefined ? undefined : explicitCaption,
+    title: explicitCaption || textCueTitle(entries[0]?.text ?? '') || kindNames.text,
     entries: entries.map(entry => ({ ...entry, text: entry.text.trim() })),
     theme,
     captionFromFirstEntry: captionFromFirstEntry || undefined,
   }
   const valid = !busy && slide.entries.length > 0 && slide.entries.every(entry => !!entry.text)
-  const canSaveToLibrary = valid && !!name.trim()
 
   function saveToLibrary() {
-    if (library && canSaveToLibrary) setLibraryError(library.onSave(slide, name.trim(), folder) ?? '')
+    if (library && valid) setLibraryError(library.onSave(slide, folder) ?? '')
   }
 
   function liveShortcut(event: KeyboardEvent<HTMLFormElement>) {
@@ -147,30 +142,24 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
       if (onSave && valid) onSave(slide)
       else if (!onSave) saveToLibrary()
     }}>
-      {library && <>
+      {library && (
         <button type="button" className="button button-quiet text-library-back" onClick={library.onBack}>
           <ArrowLeft size={16} aria-hidden="true" /> Back to library
         </button>
-        <fieldset className="text-library-fields">
-          <legend>Save for reuse</legend>
-          <label>
-            Name
-            <input value={name} maxLength={100} placeholder="e.g. Holly for Your Name"
-              onChange={event => { setName(event.target.value); setLibraryError('') }} />
-          </label>
-          <label>
-            Folder
-            <input value={folder} maxLength={180} placeholder="e.g. Worships"
-              onChange={event => { setFolder(event.target.value); setLibraryError('') }} />
-          </label>
-        </fieldset>
-        {libraryError && <p className="media-warning" role="alert">{libraryError}</p>}
-      </>}
+      )}
       <label>
         Caption (optional)
         <input autoFocus value={caption} maxLength={100} placeholder="Uses the first text entry if blank"
           onChange={event => setCaption(event.target.value)} />
       </label>
+      {library && (
+        <label>
+          Library folder
+          <input value={folder} maxLength={180} placeholder="e.g. Worships"
+            onChange={event => { setFolder(event.target.value); setLibraryError('') }} />
+        </label>
+      )}
+      {libraryError && <p className="media-warning" role="alert">{libraryError}</p>}
       <ol className="text-entries">
         {entries.map((entry, index) => {
           const label = captionFromFirstEntry && index === 0
@@ -204,13 +193,13 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
       <button type="button" className="button text-entry-add" onClick={addEntry}><Plus size={16} /> Add text entry</button>
       <ThemePicker value={theme} onChange={setTheme} />
       <div className="dialog-actions">
-        {library && onSave && <button type="button" className="button" disabled={!canSaveToLibrary} onClick={saveToLibrary}>
+        {library && onSave && <button type="button" className="button" disabled={!valid} onClick={saveToLibrary}>
           Save to library
         </button>}
         {onLive && <button type="button" className="button" disabled={!valid} aria-keyshortcuts="Control+Enter" onClick={() => onLive(slide)}>
           <RadioTower size={15} aria-hidden="true" /> Send to Kiosk <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>
         </button>}
-        <button type="submit" className="button button-primary" disabled={onSave ? !valid : !canSaveToLibrary} aria-keyshortcuts="Enter">
+        <button type="submit" className="button button-primary" disabled={!valid} aria-keyshortcuts="Enter">
           {onSave ? existing ? 'Save changes' : 'Add to playlist' : 'Save to library'}
           <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>
         </button>
