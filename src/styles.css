@@ -78,7 +78,6 @@ svg { flex: none; }
 .button.button-primary:hover:not(:disabled) { background: #d5c1ff; }
 .button.button-quiet { background: transparent; border-color: transparent; color: #c5bdd3; }
 .button.button-quiet:hover:not(:disabled) { background: #282435; border-color: transparent; }
-.button.button-quiet.is-active { color: #fdaeb9; border-color: #69414b; background: #372630; }
 .button.button-danger { background: #7b3b4c; color: white; border-color: #a75365; }
 .button.button-danger:hover { background: #96465b; }
 .icon-button { padding: 0; min-width: 34px; min-height: 34px; color: #b9b0ca; }
@@ -253,12 +252,15 @@ button.icon-button:disabled { opacity: .35; }
 .media-audio .media-mute-active { color: #fdaeb9; background: #372630; border-color: #69414b; }
 
 .transport {
-  display: flex; flex: none; justify-content: space-between; align-items: center; gap: 8px;
+  display: flex; flex: none; justify-content: flex-end; align-items: center; gap: 5px;
   margin: 7px 0 8px;
 }
-.transport-mode, .transport-navigation { display: flex; align-items: center; gap: 5px; }
-.transport .button, .transport .icon-button { min-height: 32px; }
-.transport-navigation .button-primary { min-width: 101px; }
+.transport .button { min-height: 32px; }
+.transport-blackout { margin-inline-end: auto; }
+.button.button-quiet.transport-blackout[aria-pressed="true"] {
+  color: #fdaeb9; border-color: #69414b; background: #372630;
+}
+.transport .button-primary { min-width: 101px; }
 
 .cue-section {
   --cue-space: 18px;
@@ -310,8 +312,8 @@ button.icon-button:disabled { opacity: .35; }
 .dialog-header h2 { font-size: 20px; letter-spacing: -.025em; }
 .dialog-header .icon-button { min-height: 31px; min-width: 31px; background: transparent; border-color: transparent; }
 .editor { display: grid; gap: 14px; color: #e3d8ef; font-size: 13px; }
-.editor label:not(.theme-option, .search-box) { display: grid; gap: 6px; min-width: 0; font-size: 12px; font-weight: 780; }
-.editor input:not([type="radio"]), .editor textarea, .editor select {
+.editor label:not(.theme-option, .search-box, .bible-database) { display: grid; gap: 6px; min-width: 0; font-size: 12px; font-weight: 780; }
+.editor input:not([type="radio"], [type="checkbox"]), .editor textarea, .editor select {
   width: 100%; min-width: 0; min-height: 37px; color: #f0eafa; background: #171420;
   border: 1px solid #463a52; border-radius: 7px; padding: 8px 9px; font-size: 13px; font-weight: 580;
 }
@@ -336,6 +338,30 @@ button.icon-button:disabled { opacity: .35; }
 .kiosk-background-preview img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
 .kiosk-background-name { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.settings-tabs { display: flex; border-bottom: 1px solid #463a52; margin-bottom: 16px; }
+.settings-tabs button {
+  display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px;
+  border: 0; border-bottom: 2px solid var(--accent); background: transparent;
+  color: var(--accent); font-size: 13px; font-weight: 790;
+}
+.bible-settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.bible-settings-heading h3 { margin: 0; font-size: 14px; font-weight: 800; }
+.bible-database-list {
+  list-style: none; margin: 0; padding: 0; max-height: min(240px, 35vh); overflow: auto;
+  border: 1px solid #463a52; border-radius: 8px; background: #1c1925;
+}
+.bible-database-list li + li { border-top: 1px solid #373043; }
+.bible-settings .bible-database {
+  display: flex; align-items: center; gap: 11px; padding: 9px 11px; cursor: pointer;
+}
+.bible-database:hover { background: #282235; }
+.bible-settings .bible-database input[type="checkbox"] {
+  width: 16px; height: 16px; min-height: 0; margin: 0; flex: none; accent-color: var(--accent);
+}
+.bible-database-name { display: grid; gap: 2px; min-width: 0; }
+.bible-database-name small { color: var(--muted); font-size: 11px; font-weight: 620; }
+.bible-database-name > * { overflow-wrap: anywhere; }
+.settings-error { color: #ffc0ca; overflow-wrap: anywhere; }
 .dialog-actions .button-primary .cue-shortcut { color: inherit; }
 .theme-picker { margin: 0; padding: 0; border: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .theme-picker legend { font-weight: 790; font-size: 12px; margin-bottom: 7px; padding: 0; }
@@ -491,10 +517,9 @@ button.icon-button:disabled { opacity: .35; }
   .media-playback .icon-button, .media-playback .media-skip { min-width: 25px; min-height: 26px; }
   .media-playback .media-skip { padding-inline: 4px; }
   .media-playback .media-skip span { display: none; }
-  .transport, .transport-mode, .transport-navigation { gap: 4px; }
+  .transport { gap: 4px; }
   .transport .button { padding: 0 6px; font-size: 10px; gap: 3px; }
-  .transport-navigation .button-primary { min-width: auto; }
-  .transport-mode .button-quiet span { display: none; }
+  .transport .button-primary { min-width: auto; }
 }
 
 @media (max-width: 500px) {

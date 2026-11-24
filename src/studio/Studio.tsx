@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   BookOpen, ChevronDown, CircleAlert, Ellipsis, FolderOpen, FolderPlus, Image as ImageIcon, LibraryBig, ListMusic,
-  Monitor, MonitorOff, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, Trash2, Type, X,
+  Monitor, MonitorOff, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, Settings, Trash2, Type, X,
 } from 'lucide-react'
 import { useStage } from '../shared/Audience'
 import { useKioskBackground } from '../shared/KioskBackground'
@@ -22,8 +22,10 @@ import { ScriptureEditor } from './ScriptureEditor'
 import { MediaBrowser, type MediaView } from './MediaBrowser'
 import { TextSlideLibrary } from './TextSlideLibrary'
 import { Preview } from './Preview'
+import { SettingsDialog } from './Settings'
 
 type Editor =
+  | { kind: 'settings' }
   | { kind: 'kiosk-background' }
   | { kind: 'choose'; parent: string }
   | { kind: 'text-library'; parent: string; selectedId?: string; folder?: string }
@@ -306,6 +308,10 @@ export default function Studio() {
     catch (reason) { tell(errorText(reason), true) }
   }
 
+  function toggleBlackout() {
+    void updateStage(setBlackout(!stage.blackout))
+  }
+
   useEffect(() => {
     function shortcuts(event: KeyboardEvent) {
       if (event.altKey || event.metaKey || event.repeat || event.isComposing || event.defaultPrevented) return
@@ -324,7 +330,7 @@ export default function Studio() {
       if (event.key === 'ArrowUp' && (index > 0 || index < 0)) { event.preventDefault(); nudge(-1) }
       if (event.key === 'ArrowDown') { event.preventDefault(); nudge(1) }
       if (event.key === 'Enter' && queued && next) { event.preventDefault(); goLive() }
-      if (event.key.toLowerCase() === 'b') void updateStage(setBlackout(!stage.blackout))
+      if (event.key.toLowerCase() === 'b') toggleBlackout()
     }
 
     window.addEventListener('keydown', shortcuts)
@@ -518,6 +524,8 @@ export default function Studio() {
           <button className={`button kiosk-button${kiosk ? ' kiosk-button--open' : ''}`} onClick={() => void toggleKiosk()} disabled={!display || displayBusy}>
             {kiosk ? <MonitorOff size={16} /> : <Play size={15} />} {kiosk ? 'Close Kiosk' : 'Launch Kiosk'}
           </button>
+          <button type="button" className="icon-button settings-button" aria-label="Settings" title="Settings" aria-haspopup="dialog"
+            onClick={() => setEditor({ kind: 'settings' })}><Settings size={17} aria-hidden="true" /></button>
         </div>
       </header>
 
@@ -587,8 +595,7 @@ export default function Studio() {
               kiosk={kiosk} busy={transmitting} canGoLive={!!queued && !!next}
               hasPrevious={index > 0 || (index < 0 && sequence.length > 0)} hasNext={index >= 0 && index < sequence.length - 1}
               onPrevious={() => nudge(-1)} onNext={() => nudge(1)} onGoLive={goLive}
-              onBlackout={() => void updateStage(setBlackout(!stage.blackout))}
-              onClear={() => void updateStage(present(null))}
+              onBlackout={toggleBlackout}
               onNavigateVerse={showAdjacentVerse}
               textNavigation={liveTextIndex >= 0 && liveTextCues.length > 1 ? {
                 index: liveTextIndex, total: liveTextCues.length, onMove: showAdjacentTextSlide,
@@ -629,7 +636,8 @@ export default function Studio() {
         <button className="icon-button" aria-label="Dismiss message" onClick={() => setNotice(null)}><X size={16} /></button>
       </div>}
 
-      {editor && <Dialog key={editor.kind} title={title} wide={editor.kind === 'media' || editor.kind === 'scripture' || editor.kind === 'text-library'} onClose={() => setEditor(null)}>
+      {editor?.kind === 'settings' && <SettingsDialog onClose={() => setEditor(null)} />}
+      {editor && editor.kind !== 'settings' && <Dialog key={editor.kind} title={title} wide={editor.kind === 'media' || editor.kind === 'scripture' || editor.kind === 'text-library'} onClose={() => setEditor(null)}>
         {editor.kind === 'choose' && <div className="add-cue-options">
           {cueMenuItems(editor.parent, 'button')}
         </div>}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import { BookOpen, ChevronDown, ChevronUp, Search } from 'lucide-react'
 import { bible } from '../shared/bridge'
-import { type Book, type ScriptureCue, type Theme, type Translation, type Verse } from '../shared/model'
+import { type BibleSettings, type Book, type ScriptureCue, type Theme, type Verse } from '../shared/model'
 import {
   deleteReferenceSegment, lookupReference, normalizeBook, readVerseWindow, referenceSuggestions, verseLabel, verseWindowSize,
   type PassageVerse, type ReferenceSuggestion,
@@ -28,8 +28,8 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
   onLive: (cue: ScriptureCue) => void;
 }) {
   const initial = existing?.reference
-  const [translation, setTranslation] = useState(initial?.translation ?? 'WEBP')
-  const [translations, setTranslations] = useState<Translation[]>([])
+  const [requestedTranslation, setTranslation] = useState(initial?.translation)
+  const [settings, setSettings] = useState<BibleSettings>()
   const [translationError, setTranslationError] = useState('')
   const [theme, setTheme] = useState<Theme>(existing?.theme ?? 'violet')
   const [draft, setDraft] = useState<Draft>()
@@ -54,6 +54,11 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
   const selectedRow = useRef<HTMLButtonElement>(null)
   const focusSelectedRow = useRef(false)
 
+  const translations = settings?.databases.filter(item => item.enabled) ?? []
+  const translation = translations.find(item => item.id === (requestedTranslation ?? settings?.defaultId))?.id ?? ''
+  const unavailable = settings && !translation
+    ? translations.length ? 'Choose an enabled translation to edit this cue.' : 'Enable a Bible database in Settings to look up verses.'
+    : ''
   const books = bookList?.key === translation ? bookList : undefined
   const bookValues = books && 'values' in books ? books.values : undefined
   const original = bookValues?.find(book => book.id === initial?.book)
@@ -82,7 +87,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
   const start = browse?.start ?? search
   const currentWindow = verseWindow?.start === start ? verseWindow?.value : undefined
   const phrase = query.trim()
-  const textKey = byText && canSearchVerseText(phrase) ? `${translation}/${phrase}` : ''
+  const textKey = translation && byText && canSearchVerseText(phrase) ? `${translation}/${phrase}` : ''
   const result = textResult?.key === textKey ? textResult : undefined
   const hits = result && 'values' in result ? result.values : []
   const activeMatch = textMatch?.key === textKey && hits.includes(textMatch.verse) ? textMatch.verse : hits[0]
@@ -98,13 +103,14 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
 
   useEffect(() => {
     let active = true
-    void bible.translations().then(values => {
-      if (active) setTranslations(values)
+    void bible.settings().then(values => {
+      if (active) setSettings(values)
     }).catch(reason => { if (active) setTranslationError(String(reason)) })
     return () => { active = false }
   }, [])
 
   useEffect(() => {
+    if (!translation) return
     let active = true
     void bible.books(translation).then(values => {
       if (active) setBookList({ key: translation, values })
@@ -387,7 +393,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
                 inputRef.current = element
                 if (element) element.autofocus = true
               }}
-              autoComplete="off" spellCheck={false} maxLength={byText ? 200 : 80}
+              disabled={!translation} autoComplete="off" spellCheck={false} maxLength={byText ? 200 : 80}
               value={byText ? query : text} placeholder={byText ? 'e.g. love your enemies' : `e.g. ${referenceExample} 2:24`}
               onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); setActiveIndex(-1) }}
               onChange={byText ? event => setQuery(event.target.value) : changeReference}
@@ -410,9 +416,9 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
           <span className="scripture-translation">
             <select value={translation} disabled={!translations.length}
               onChange={event => changeTranslation(event.target.value)}>
-              {!translations.some(option => option.id === translation) && (
-                <option value={translation}>{translations.length || translationError ? translation : 'Loading translations…'}</option>
-              )}
+              {!translation && <option value="" disabled>
+                {translations.length ? 'Choose a translation' : settings ? 'No enabled translations' : translationError ? 'Translations unavailable' : 'Loading translations…'}
+              </option>}
               {translations.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
             </select>
             <ChevronDown size={15} aria-hidden="true" />
@@ -456,7 +462,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
         </section>
       ) : (
         <div className="verse-preview" aria-live="polite">
-          <BookOpen size={17} aria-hidden="true" /><span>{byText ? status : error || status}</span>
+          <BookOpen size={17} aria-hidden="true" /><span>{unavailable || error || status}</span>
         </div>
       )}
       <ThemePicker value={theme} onChange={setTheme} />

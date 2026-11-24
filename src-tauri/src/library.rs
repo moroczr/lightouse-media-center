@@ -10,6 +10,9 @@ use std::sync::{Mutex, MutexGuard};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
+#[path = "bible_settings.rs"]
+pub(crate) mod bible_settings;
+
 const VIDEO: &[&str] = &["mp4", "m4v", "mov", "webm", "ogv"];
 const AUDIO: &[&str] = &["mp3", "m4a", "aac", "wav", "ogg", "oga", "flac", "opus"];
 const BACKGROUND_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp"];
@@ -119,6 +122,7 @@ impl Library {
             );
             ",
         )?;
+        bible_settings::initialize(&db)?;
         let bible_directory = directory.join("bibles");
         fs::create_dir_all(&bible_directory)?;
         for (id, name, source_id, source) in BIBLES {
@@ -149,10 +153,7 @@ impl Library {
         )?;
         if !exists {
             let data: BibleData = serde_json::from_str(source)?;
-            transaction.execute(
-                "INSERT INTO translations VALUES (?1, ?2)",
-                params![id, name],
-            )?;
+            Self::store_bible(&transaction, id, name, data)?;
             transaction.execute(
                 "INSERT INTO translation_sources VALUES (?1, 'Complete Bible', ?2, '', ?3, '', '', ?4)",
                 params![
@@ -162,18 +163,28 @@ impl Library {
                     "Bundled from the public-domain eBible.org verse-per-line distribution.",
                 ],
             )?;
-            let mut add_book =
-                transaction.prepare("INSERT INTO books VALUES (?1, ?2, ?3, ?4, ?5)")?;
-            for (position, book) in data.books.into_iter().enumerate() {
-                add_book.execute(params![id, book.id, book.name, book.chapters, position])?;
-            }
-            let mut add_verse =
-                transaction.prepare("INSERT INTO verses VALUES (?1, ?2, ?3, ?4, ?5)")?;
-            for (book, chapter, verse, text) in data.verses {
-                add_verse.execute(params![id, book, chapter, verse, text])?;
-            }
         }
         transaction.commit()?;
+        Ok(())
+    }
+
+    fn store_bible(db: &Connection, id: &str, name: &str, data: BibleData) -> rusqlite::Result<()> {
+        db.execute("INSERT INTO translations VALUES (?1, ?2)", params![id, name])?;
+        let mut add_book = db.prepare("INSERT INTO books VALUES (?1, ?2, ?3, ?4, ?5)")?;
+        let mut add_alias = db.prepare("INSERT INTO book_aliases VALUES (?1, ?2, ?3, ?4)")?;
+        for (position, book) in data.books.into_iter().enumerate() {
+            add_book.execute(params![id, book.id, book.name, book.chapters, position])?;
+            if book.alternate_name.is_some() || book.abbreviation.is_some() {
+                add_alias.execute(params![
+                    id, book.id, book.alternate_name.as_deref().unwrap_or(&book.name),
+                    book.abbreviation.unwrap_or_default(),
+                ])?;
+            }
+        }
+        let mut add_verse = db.prepare("INSERT INTO verses VALUES (?1, ?2, ?3, ?4, ?5)")?;
+        for (book, chapter, verse, text) in data.verses {
+            add_verse.execute(params![id, book, chapter, verse, text])?;
+        }
         Ok(())
     }
 
@@ -184,18 +195,18 @@ impl Library {
     }
 
     fn open_bible(&self, translation: &str) -> CommandResult<Connection> {
-        if translation.is_empty()
-            || !translation
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-        {
+        if !valid_translation_id(translation) {
             return Err("Invalid Bible translation ID.".into());
         }
-        Connection::open_with_flags(
-            self.bible_directory.join(format!("{translation}.sqlite3")),
-            OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .map_err(|error| format!("Could not open the Bible edition {translation}: {error}"))
+        let local = self.bible_directory.join(format!("{translation}.sqlite3"));
+        let path = if local.is_file() {
+            local
+        } else {
+            let db = self.db()?;
+            bible_settings::imported_path(self, &db, translation)?.unwrap_or(local)
+        };
+        open_bible_file(&path)
+            .map_err(|error| format!("Could not open the Bible edition {translation}: {error}"))
     }
 
     fn picks(&self) -> CommandResult<MutexGuard<'_, Picks>> {
@@ -338,43 +349,15 @@ pub fn save_project(
     Ok(())
 }
 
-#[tauri::command]
-pub fn translations(library: State<'_, Library>) -> CommandResult<Vec<Translation>> {
-    fn translation_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Translation> {
-        Ok(Translation {
-            id: row.get(0)?,
-            name: row.get(1)?,
-        })
-    }
+fn valid_translation_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
 
-    let mut translations = Vec::new();
-    for entry in fs::read_dir(&library.bible_directory).map_err(message)? {
-        let path = entry.map_err(message)?.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("sqlite3") || !path.is_file() {
-            continue;
-        }
-        let Some(id) = path.file_stem().and_then(|stem| stem.to_str()) else {
-            continue;
-        };
-        // An unreadable edition must not prevent the other editions from loading.
-        if let Ok(edition) = library.open_bible(id).and_then(|db| {
-            db.query_row(
-                "SELECT id, name FROM translations WHERE id = ?1",
-                [id],
-                translation_row,
-            )
-            .map_err(message)
-        }) {
-            translations.push(edition);
-        }
-    }
-    translations.sort_by(|first, second| {
-        let rank = |id: &str| !BIBLES.iter().any(|(bundled, _, _, _)| *bundled == id);
-        rank(&first.id)
-            .cmp(&rank(&second.id))
-            .then_with(|| first.id.cmp(&second.id))
-    });
-    Ok(translations)
+fn open_bible_file(path: &Path) -> rusqlite::Result<Connection> {
+    let db = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    db.pragma_update(None, "trusted_schema", false)?;
+    Ok(db)
 }
 
 fn read_books(db: &Connection, translation: &str) -> CommandResult<Vec<Book>> {

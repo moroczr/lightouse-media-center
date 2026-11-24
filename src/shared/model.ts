@@ -20,6 +20,21 @@ export interface Translation {
   name: string
 }
 
+export interface BibleDatabase extends Translation {
+  fileName: string | null
+  enabled: boolean
+}
+
+export interface BiblePreferences {
+  disabledIds: string[]
+  defaultId: string | null
+}
+
+export interface BibleSettings {
+  databases: BibleDatabase[]
+  defaultId: string | null
+}
+
 export interface Verse {
   verse: number
   text: string

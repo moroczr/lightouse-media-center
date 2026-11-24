@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Ban, ChevronLeft, ChevronRight, Monitor, MonitorX, Pause, Play, RadioTower, RotateCcw, RotateCw, Square, Volume2, VolumeX } from 'lucide-react'
+import { Ban, ChevronLeft, ChevronRight, Monitor, Pause, Play, RadioTower, RotateCcw, RotateCw, Square, Volume2, VolumeX } from 'lucide-react'
 import { Audience } from '../shared/Audience'
 import { adjacentVerses } from '../shared/bridge'
 import { clockTime, isMedia, type AudienceCue, type PlaybackAction, type Reference, type Stage } from '../shared/model'
@@ -22,7 +22,6 @@ interface PreviewProps {
   onNext: () => void
   onGoLive: () => void
   onBlackout: () => void
-  onClear: () => void
   onNavigateVerse: (verse: PassageVerse) => void
   textNavigation?: { index: number; total: number; onMove: (direction: -1 | 1) => void }
   onPlayback: (action: PlaybackAction) => void
@@ -216,16 +215,12 @@ export function Preview(props: PreviewProps) {
         </section>
         <KioskVolume stage={stage} onAction={props.onPlayback} />
       </div>
-      <div className="transport">
-        <div className="transport-mode">
-          <button className={`button button-quiet${stage.blackout ? ' is-active' : ''}`} aria-pressed={stage.blackout} onClick={props.onBlackout} title="Toggle blackout (B)"><Ban size={16} /> <span>Blackout</span></button>
-          {stage.cue && <button className="icon-button" aria-label="Clear live output" onClick={props.onClear} title="Clear live output"><MonitorX size={17} /></button>}
-        </div>
-        <div className="transport-navigation">
-          <button className="button" disabled={!props.hasPrevious} onClick={props.onPrevious} title="Cue previous item (↑)"><ChevronLeft size={17} /> Previous</button>
-          <button className="button" disabled={!props.hasNext} onClick={props.onNext} title="Cue next item (↓)">Next <ChevronRight size={17} /></button>
-          <button className="button button-primary" disabled={!props.canGoLive || props.busy} onClick={props.onGoLive} title="Send the queued item to Kiosk (Enter)"><RadioTower size={17} /> Go live</button>
-        </div>
+      <div className="transport" role="group" aria-label="Cue controls">
+        <button type="button" className="button button-quiet transport-blackout" aria-pressed={stage.blackout}
+          onClick={props.onBlackout} title="Toggle blackout (B)"><Ban size={16} aria-hidden="true" /> Blackout</button>
+        <button className="button" disabled={!props.hasPrevious} onClick={props.onPrevious} title="Cue previous item (↑)"><ChevronLeft size={17} /> Previous</button>
+        <button className="button" disabled={!props.hasNext} onClick={props.onNext} title="Cue next item (↓)">Next <ChevronRight size={17} /></button>
+        <button className="button button-primary" disabled={!props.canGoLive || props.busy} onClick={props.onGoLive} title="Send the queued item to Kiosk (Enter)"><RadioTower size={17} /> Go live</button>
       </div>
     </>
   )

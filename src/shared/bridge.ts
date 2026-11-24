@@ -1,8 +1,9 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { browserBibleSettings, importBrowserBible, loadBrowserBible, saveBrowserBibleSettings } from './browserBible'
 import {
-  type AudienceCue, type Book, type Cue, type Display, type Group, type KioskBackground, type MediaFile, type PlaybackAction, type Project,
-  type Reference, type SavedProject, type Source, type Stage, type Translation, type Verse, emptyStage, isMedia, normalizeProject,
+  type AudienceCue, type BiblePreferences, type BibleSettings, type Book, type Cue, type Display, type Group, type KioskBackground, type MediaFile, type PlaybackAction, type Project,
+  type Reference, type SavedProject, type Source, type Stage, type Verse, emptyStage, isMedia, normalizeProject,
 } from './model'
 import { formatScriptureCue, readAdjacentVerses, verseLabel } from './scripture'
 import { createVerseSearch, type BibleVerseRow } from './verseSearch'
@@ -17,32 +18,13 @@ const browserUrls = new Map<string, string>()
 let popup: Window | null = null
 let browserStage: Stage = structuredClone(emptyStage)
 
-const translations: Translation[] = [
-  { id: 'WEBP', name: 'World English Bible' },
-  { id: 'WEBPB', name: 'World English Bible (British)' },
-]
-
 type BibleData = { books: Book[]; verses: BibleVerseRow[] }
-const bibles = new Map<string, Promise<BibleData>>()
 const verseSearches = new Map<string, Promise<ReturnType<typeof createVerseSearch>>>()
-
-function loadBible(translation: string) {
-  let request = bibles.get(translation)
-  if (!request) {
-    request = fetch(`/bible-${translation}.json`).then(response => {
-      if (!response.ok) throw new Error('Could not load the Scripture database.')
-      return response.json()
-    })
-    bibles.set(translation, request)
-    request.catch(() => bibles.delete(translation))
-  }
-  return request
-}
 
 function loadVerseSearch(translation: string) {
   let request = verseSearches.get(translation)
   if (!request) {
-    const data = desktop ? invoke<BibleData>('bible_search_data', { translation }) : loadBible(translation)
+    const data = desktop ? invoke<BibleData>('bible_search_data', { translation }) : loadBrowserBible(translation)
     request = data.then(({ books, verses }) => createVerseSearch(books, verses))
     verseSearches.set(translation, request)
     void request.catch(() => verseSearches.delete(translation))
@@ -52,15 +34,24 @@ function loadVerseSearch(translation: string) {
 
 export const bible = {
   search: async (translation: string, query: string) => (await loadVerseSearch(translation))(query),
-  translations: () => desktop ? invoke<Translation[]>('translations') : Promise.resolve(translations),
+  settings: async () => desktop ? invoke<BibleSettings>('load_bible_settings') : browserBibleSettings(),
+  saveSettings: async (preferences: BiblePreferences) => desktop
+    ? invoke<BibleSettings>('save_bible_settings', { preferences })
+    : saveBrowserBibleSettings(preferences),
+  importFile: async () => {
+    if (desktop) return invoke<BibleSettings | null>('import_bible')
+    const [file] = await fileInput('.json')
+    return file ? importBrowserBible(file) : null
+  },
   books: async (translation: string) => desktop
     ? invoke<Book[]>('books', { translation })
-    : (await loadBible(translation)).books,
+    : (await loadBrowserBible(translation)).books,
   verses: async (translation: string, book: string, chapter: number) => desktop
     ? invoke<Verse[]>('verses', { translation, book, chapter })
-    : (await loadBible(translation)).verses
+    : (await loadBrowserBible(translation)).verses
       .filter(row => row[0] === book && row[1] === chapter)
-      .map(row => ({ verse: row[2], text: row[3] })),
+      .map(row => ({ verse: row[2], text: row[3] }))
+      .sort((a, b) => a.verse - b.verse),
 }
 
 export async function adjacentVerses({ translation, book, chapter, verse }: Reference) {
