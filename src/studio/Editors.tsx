@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, ArrowUp, Plus, RadioTower, Trash2, X } from 'lucide-react'
-import { kindNames, textCueTitle, textSlideCues, type Item, type TextCue, type TextEntry, type TextSlide, type Theme } from '../shared/model'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { ArrowDown, ArrowLeft, ArrowUp, Plus, RadioTower, Trash2, X } from 'lucide-react'
+import { kindNames, textCueTitle, type Item, type TextEntry, type TextSlide, type Theme } from '../shared/model'
 
 export function Dialog({ title, children, onClose, wide }: {
   title: string; children: ReactNode; onClose: () => void; wide?: boolean;
@@ -77,13 +77,23 @@ export function EditorActions({ editing, valid, onLive, showShortcuts }: {
   )
 }
 
-export function TextEditor({ existing, onSave, onLive }: {
-  existing?: TextSlide;
-  onSave: (slide: TextSlide) => void;
-  onLive: (cue: TextCue) => void;
+export function TextEditor({ existing, onSave, onLive, library, busy = false }: {
+  existing?: TextSlide
+  busy?: boolean
+  onSave?: (slide: TextSlide) => void
+  onLive?: (slide: TextSlide) => void
+  library?: {
+    name?: string
+    folder: string
+    onSave: (slide: TextSlide, name: string, folder: string) => string | undefined
+    onBack: () => void
+  }
 }) {
   const [id] = useState(() => existing?.id ?? crypto.randomUUID())
-  const [caption, setCaption] = useState(existing?.captionFromFirstEntry ? '' : existing?.title ?? '')
+  const [caption, setCaption] = useState(existing?.captionFromFirstEntry ? '' : existing?.caption ?? existing?.title ?? '')
+  const [name, setName] = useState(library?.name ?? '')
+  const [folder, setFolder] = useState(library?.folder ?? '')
+  const [libraryError, setLibraryError] = useState('')
   const [entries, setEntries] = useState<TextEntry[]>(() => existing?.entries ?? [{ id: crypto.randomUUID(), text: '' }])
   const [theme, setTheme] = useState<Theme>(existing?.theme ?? 'twilight')
   const entryToFocus = useRef<string | null>(null)
@@ -93,13 +103,26 @@ export function TextEditor({ existing, onSave, onLive }: {
   const slide: TextSlide = {
     id,
     kind: 'text',
-    title: explicitCaption || textCueTitle(entries[0]?.text ?? '') || kindNames.text,
+    title: existing?.caption === undefined
+      ? explicitCaption || textCueTitle(entries[0]?.text ?? '') || kindNames.text : existing.title,
+    caption: existing?.caption === undefined ? undefined : explicitCaption,
     entries: entries.map(entry => ({ ...entry, text: entry.text.trim() })),
     theme,
     captionFromFirstEntry: captionFromFirstEntry || undefined,
   }
-  const valid = slide.entries.length > 0 && slide.entries.every(entry => !!entry.text)
-  const cues = textSlideCues(slide)
+  const valid = !busy && slide.entries.length > 0 && slide.entries.every(entry => !!entry.text)
+  const canSaveToLibrary = valid && !!name.trim()
+
+  function saveToLibrary() {
+    if (library && canSaveToLibrary) setLibraryError(library.onSave(slide, name.trim(), folder) ?? '')
+  }
+
+  function liveShortcut(event: KeyboardEvent<HTMLFormElement>) {
+    if (!onLive || event.key !== 'Enter' || !event.ctrlKey || event.shiftKey || event.altKey || event.metaKey
+      || event.defaultPrevented || event.nativeEvent.isComposing) return
+    event.preventDefault()
+    if (valid && !event.repeat) onLive(slide)
+  }
 
   function addEntry() {
     const id = crypto.randomUUID()
@@ -119,7 +142,30 @@ export function TextEditor({ existing, onSave, onLive }: {
   }
 
   return (
-    <form className="editor" onSubmit={event => { event.preventDefault(); if (valid) onSave(slide) }}>
+    <form className="editor" onKeyDown={liveShortcut} onSubmit={event => {
+      event.preventDefault()
+      if (onSave && valid) onSave(slide)
+      else if (!onSave) saveToLibrary()
+    }}>
+      {library && <>
+        <button type="button" className="button button-quiet text-library-back" onClick={library.onBack}>
+          <ArrowLeft size={16} aria-hidden="true" /> Back to library
+        </button>
+        <fieldset className="text-library-fields">
+          <legend>Save for reuse</legend>
+          <label>
+            Name
+            <input value={name} maxLength={100} placeholder="e.g. Holly for Your Name"
+              onChange={event => { setName(event.target.value); setLibraryError('') }} />
+          </label>
+          <label>
+            Folder
+            <input value={folder} maxLength={180} placeholder="e.g. Worships"
+              onChange={event => { setFolder(event.target.value); setLibraryError('') }} />
+          </label>
+        </fieldset>
+        {libraryError && <p className="media-warning" role="alert">{libraryError}</p>}
+      </>}
       <label>
         Caption (optional)
         <input autoFocus value={caption} maxLength={100} placeholder="Uses the first text entry if blank"
@@ -157,8 +203,18 @@ export function TextEditor({ existing, onSave, onLive }: {
       </ol>
       <button type="button" className="button text-entry-add" onClick={addEntry}><Plus size={16} /> Add text entry</button>
       <ThemePicker value={theme} onChange={setTheme} />
-      <EditorActions editing={!!existing} valid={valid}
-        onLive={!existing && cues.length === 1 ? () => onLive(cues[0]) : undefined} />
+      <div className="dialog-actions">
+        {library && onSave && <button type="button" className="button" disabled={!canSaveToLibrary} onClick={saveToLibrary}>
+          Save to library
+        </button>}
+        {onLive && <button type="button" className="button" disabled={!valid} aria-keyshortcuts="Control+Enter" onClick={() => onLive(slide)}>
+          <RadioTower size={15} aria-hidden="true" /> Send to Kiosk <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>
+        </button>}
+        <button type="submit" className="button button-primary" disabled={onSave ? !valid : !canSaveToLibrary} aria-keyshortcuts="Enter">
+          {onSave ? existing ? 'Save changes' : 'Add to playlist' : 'Save to library'}
+          <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>
+        </button>
+      </div>
     </form>
   )
 }

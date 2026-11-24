@@ -49,9 +49,16 @@ export type TextSlide = ItemBase & {
   kind: 'text'
   theme: Theme
   entries: TextEntry[]
+  caption?: string
   showCaption?: false
   captionFromFirstEntry?: true
 }
+export interface LibraryTextSlide {
+  name: string
+  folder: string
+  slide: TextSlide
+}
+
 export type TextCue = ItemBase & { kind: 'text'; text: string; theme: Theme; caption?: string }
 export type ScriptureCue = ItemBase & { kind: 'scripture'; reference: Reference; theme: Theme }
 type MediaCue = ItemBase & { kind: 'video' | 'audio'; path: string }
@@ -65,6 +72,7 @@ export interface Project {
   version: 1
   playlists: Group[]
   sources: Source[]
+  textLibrary: LibraryTextSlide[]
   activeId: string
   displayId: string | null
 }
@@ -131,7 +139,10 @@ export const kindNames: Record<ItemKind, string> = {
 
 type LegacyTextSlide = Omit<TextCue, 'caption'>
 type SavedGroup = Omit<Group, 'children'> & { children: (Exclude<Item, Group> | LegacyTextSlide | SavedGroup)[] }
-export type SavedProject = Omit<Project, 'playlists'> & { playlists: SavedGroup[] }
+export type SavedProject = Omit<Project, 'playlists' | 'textLibrary'> & {
+  playlists: SavedGroup[]
+  textLibrary?: LibraryTextSlide[]
+}
 
 function migrateTextSlide({ id, title, text, theme }: LegacyTextSlide): TextSlide {
   return { id, title, kind: 'text', theme, entries: [{ id: `${id}:entry`, text }], showCaption: false }
@@ -148,7 +159,7 @@ export function normalizeProject(project: SavedProject): Project {
       }),
     }
   }
-  return { ...project, playlists: project.playlists.map(migrateGroup) }
+  return { ...project, textLibrary: project.textLibrary ?? [], playlists: project.playlists.map(migrateGroup) }
 }
 
 export function textCueTitle(text: string) {
@@ -157,7 +168,7 @@ export function textCueTitle(text: string) {
 
 export function textSlideCues(slide: TextSlide): TextCue[] {
   const firstEntry = slide.captionFromFirstEntry ? slide.entries[0] : undefined
-  const caption = firstEntry?.text ?? (slide.showCaption === false ? undefined : slide.title)
+  const caption = firstEntry?.text ?? (slide.showCaption === false ? undefined : slide.caption ?? slide.title)
   const entries = firstEntry && slide.entries.length > 1 ? slide.entries.slice(1) : slide.entries
   return entries.map(entry => ({
     id: entry.id,
@@ -167,6 +178,20 @@ export function textSlideCues(slide: TextSlide): TextCue[] {
     caption,
     theme: slide.theme,
   }))
+}
+
+export function normalizeTextSlideFolder(folder: string) {
+  return folder.split('/').map(part => part.trim()).filter(Boolean).join('/')
+}
+
+export function copyLibraryTextSlide({ name, slide }: LibraryTextSlide): TextSlide {
+  return {
+    ...slide,
+    id: crypto.randomUUID(),
+    title: name,
+    caption: slide.caption ?? slide.title,
+    entries: slide.entries.map(entry => ({ ...entry, id: crypto.randomUUID() })),
+  }
 }
 
 export function flatten(items: Item[]): Cue[] {
@@ -226,6 +251,7 @@ export const starterProject: Project = {
   activeId: 'sunday',
   displayId: null,
   sources: [],
+  textLibrary: [],
   playlists: [
     {
       id: 'sunday',

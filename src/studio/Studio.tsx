@@ -10,9 +10,9 @@ import {
   controlPlayback, present, resolveCue, saveProject, setBlackout,
 } from '../shared/bridge'
 import {
-  findCueAncestors, flatten, kindNames, mediaCue, starterProject, textSlideCues, updateGroup,
+  copyLibraryTextSlide, findCueAncestors, flatten, kindNames, mediaCue, normalizeTextSlideFolder, starterProject, textSlideCues, updateGroup,
   type AudienceCue, type Cue, type Display, type Group, type Item, type ItemKind,
-  type Project, type ScriptureCue, type TextSlide, welcomePreview,
+  type LibraryTextSlide, type Project, type ScriptureCue, type TextCue, type TextSlide, welcomePreview,
 } from '../shared/model'
 import { formatScriptureCue, verseLabel, type PassageVerse } from '../shared/scripture'
 import { CueList, ItemIcon, Menu } from './CueList'
@@ -20,12 +20,15 @@ import { Dialog, NameEditor, TextEditor } from './Editors'
 import { KioskBackgroundEditor } from './KioskBackgroundEditor'
 import { ScriptureEditor } from './ScriptureEditor'
 import { MediaBrowser, type MediaView } from './MediaBrowser'
+import { TextSlideLibrary } from './TextSlideLibrary'
 import { Preview } from './Preview'
 
 type Editor =
   | { kind: 'kiosk-background' }
   | { kind: 'choose'; parent: string }
-  | { kind: 'text'; parent: string; existing?: TextSlide }
+  | { kind: 'text-library'; parent: string; selectedId?: string; folder?: string }
+  | { kind: 'text-library-edit'; parent: string; item: LibraryTextSlide }
+  | { kind: 'text'; parent: string; existing?: TextSlide; folder?: string }
   | { kind: 'scripture'; parent: string; existing?: ScriptureCue }
   | { kind: 'playlist'; parent: string | null }
   | { kind: 'media'; parent: string; filter?: 'video' | 'audio' }
@@ -52,16 +55,27 @@ function errorText(reason: unknown) {
   return reason instanceof Error ? reason.message : String(reason)
 }
 
+function playlistPath(root: Group, target: string): string[] | undefined {
+  if (root.id === target) return [root.id]
+  for (const item of root.children) {
+    if (item.kind !== 'playlist') continue
+    const path = playlistPath(item, target)
+    if (path) return [root.id, ...path]
+  }
+}
+
 export default function Studio() {
   const [project, setProject] = useState<Project>(starterProject)
   const [loaded, setLoaded] = useState(false)
   const [saveError, setSaveError] = useState('')
+  const [persistedTextLibrary, setPersistedTextLibrary] = useState<LibraryTextSlide[]>()
   const [cueId, setCueId] = useState<string | null>(desktop ? welcomePreview.id : 'opening-scripture')
   const [displayList, setDisplayList] = useState<Display[]>([])
   const [kiosk, setKiosk] = useState(false)
   const [displayBusy, setDisplayBusy] = useState(false)
   const [expanded, setExpanded] = useState(() => new Set(['worship']))
   const stage = useStage()
+  const [liveTextCues, setLiveTextCues] = useState<TextCue[]>([])
   const { background, error: backgroundError } = useKioskBackground()
   const [editor, setEditor] = useState<Editor | null>(null)
   const [mediaView, setMediaView] = useState<MediaView>('list')
@@ -75,6 +89,7 @@ export default function Studio() {
 
   const active = project.playlists.find(list => list.id === project.activeId) ?? project.playlists[0]
   const currentCueId = stage.cue?.id
+  const liveTextIndex = stage.cue?.kind === 'text' ? liveTextCues.findIndex(cue => cue.id === currentCueId) : -1
   const sequence = useMemo(() => flatten(active.children), [active])
   const index = sequence.findIndex(item => item.id === cueId)
   const queued = sequence[index]
@@ -108,8 +123,10 @@ export default function Studio() {
 
   useEffect(() => {
     if (!loaded) return
-    saves.current = saves.current.then(() => saveProject(project)).then(() => setSaveError(''))
-      .catch(reason => setSaveError(`Could not save changes: ${errorText(reason)}`))
+    saves.current = saves.current.then(() => saveProject(project)).then(() => {
+      setPersistedTextLibrary(project.textLibrary)
+      setSaveError('')
+    }).catch(reason => setSaveError(`Could not save changes: ${errorText(reason)}`))
   }, [project, loaded])
 
   useEffect(() => {
@@ -182,10 +199,11 @@ export default function Studio() {
     return () => { active = false; window.clearInterval(timer); cleanup?.() }
   }, [])
 
-  function updatePlaylist(fn: (root: Group) => Group) {
+  function updatePlaylist(fn: (root: Group) => Group, rootId = active.id) {
     setProject(current => ({
       ...current,
-      playlists: current.playlists.map(root => root.id === active.id ? fn(root) : root),
+      activeId: rootId,
+      playlists: current.playlists.map(root => root.id === rootId ? fn(root) : root),
     }))
   }
 
@@ -205,13 +223,14 @@ export default function Studio() {
     if (candidate) setCueId(candidate.id)
   }
 
-  async function send(item: Cue, advance: boolean) {
+  async function send(item: Cue, advance: boolean, textCues: TextCue[] = []) {
     if (transmittingRef.current) return
     transmittingRef.current = true
     setTransmitting(true)
     try {
       const cue = await resolveCue(item)
       await present(cue)
+      setLiveTextCues(textCues)
       if (advance) {
         const currentIndex = sequence.findIndex(candidate => candidate.id === item.id)
         setCueId(current => current === item.id ? sequence[currentIndex + 1]?.id ?? null : current)
@@ -225,6 +244,17 @@ export default function Studio() {
       transmittingRef.current = false
       setTransmitting(false)
     }
+  }
+
+  function sendTextSlide(slide: TextSlide) {
+    const cues = textSlideCues(slide)
+    if (cues.length) void send(cues[0], false, cues)
+  }
+
+  function showAdjacentTextSlide(direction: -1 | 1) {
+    if (liveTextIndex < 0 || transmittingRef.current) return
+    const cue = liveTextCues[liveTextIndex + direction]
+    if (cue) void updateStage(present(cue, stage.revision))
   }
 
   function goLive() {
@@ -298,15 +328,16 @@ export default function Studio() {
     return () => window.removeEventListener('keydown', shortcuts)
   })
 
-  function addItem(parent: string, item: Item) {
-    updatePlaylist(root => updateGroup(root, parent, group => ({ ...group, children: [...group.children, item] })))
-    if (parent !== active.id || item.kind === 'text') {
-      setExpanded(current => {
-        const next = new Set(current)
-        if (parent !== active.id) next.add(parent)
-        if (item.kind === 'text') next.add(item.id)
-        return next
-      })
+  function addItem(parent: string, item: Item, rootId = active.id) {
+    const root = project.playlists.find(playlist => playlist.id === rootId)
+    const path = root && playlistPath(root, parent)
+    if (!path) {
+      tell('The destination playlist is unavailable.', true)
+      return
+    }
+    updatePlaylist(root => updateGroup(root, parent, group => ({ ...group, children: [...group.children, item] })), rootId)
+    if (parent !== rootId || item.kind === 'text') {
+      setExpanded(current => new Set([...current, ...path.slice(1), ...(item.kind === 'text' ? [item.id] : [])]))
     }
     if (item.kind !== 'playlist') setCueId(flatten([item])[0]?.id ?? null)
     setEditor(null)
@@ -328,6 +359,20 @@ export default function Studio() {
     setEditor(null)
   }
 
+  function saveLibraryTextSlide(parent: string, slide: TextSlide, name: string, path: string) {
+    if (!loaded) return saveError || 'Wait for the workspace to finish loading.'
+    const normalized = normalizeTextSlideFolder(path)
+    const inFolder = project.textLibrary.filter(item => item.folder.toLocaleLowerCase() === normalized.toLocaleLowerCase())
+    const duplicate = inFolder.some(item => item.slide.id !== slide.id && item.name.toLocaleLowerCase() === name.toLocaleLowerCase())
+    const folder = inFolder[0]?.folder ?? normalized
+    if (duplicate) return 'A text slide with this name already exists in this folder.'
+    setProject(current => ({
+      ...current,
+      textLibrary: [...current.textLibrary.filter(item => item.slide.id !== slide.id), { name, folder, slide }],
+    }))
+    setEditor({ kind: 'text-library', parent, selectedId: slide.id })
+  }
+
   async function addSource() {
     const source = await pickFolder()
     if (source) {
@@ -346,7 +391,7 @@ export default function Studio() {
       setEditor({ kind: 'media', parent, filter: kind })
       return
     }
-    setEditor({ kind, parent })
+    setEditor({ kind: kind === 'text' ? 'text-library' : kind, parent })
   }
 
   function cueMenuItems(parent: string, className?: string) {
@@ -418,6 +463,8 @@ export default function Studio() {
   const title = editor?.kind === 'playlist' ? (editor.parent ? 'New nested playlist' : 'New playlist')
     : editor?.kind === 'rename' ? `Rename ${editor.existing.kind === 'playlist' ? 'playlist' : 'cue'}`
     : editor?.kind === 'text' ? (editor.existing ? 'Edit text slide' : 'New text slide')
+    : editor?.kind === 'text-library' ? 'Text slide library'
+    : editor?.kind === 'text-library-edit' ? 'Edit saved text slide'
     : editor?.kind === 'scripture' ? (editor.existing ? 'Edit scripture cue' : 'Bible lookup')
     : editor?.kind === 'media' ? 'Add Media'
     : editor?.kind === 'kiosk-background' ? 'Kiosk background'
@@ -515,6 +562,9 @@ export default function Studio() {
               onBlackout={() => void updateStage(setBlackout(!stage.blackout))}
               onClear={() => void updateStage(present(null))}
               onNavigateVerse={showAdjacentVerse}
+              textNavigation={liveTextIndex >= 0 && liveTextCues.length > 1 ? {
+                index: liveTextIndex, total: liveTextCues.length, onMove: showAdjacentTextSlide,
+              } : undefined}
               onPlayback={action => void updateStage(controlPlayback(stage.revision, action))}
             />
 
@@ -551,13 +601,38 @@ export default function Studio() {
         <button className="icon-button" aria-label="Dismiss message" onClick={() => setNotice(null)}><X size={16} /></button>
       </div>}
 
-      {editor && <Dialog key={editor.kind} title={title} wide={editor.kind === 'media' || editor.kind === 'scripture'} onClose={() => setEditor(null)}>
+      {editor && <Dialog key={editor.kind} title={title} wide={editor.kind === 'media' || editor.kind === 'scripture' || editor.kind === 'text-library'} onClose={() => setEditor(null)}>
         {editor.kind === 'choose' && <div className="add-cue-options">
           {cueMenuItems(editor.parent, 'button')}
         </div>}
         {editor.kind === 'playlist' && <NameEditor label="Playlist name" action="Create playlist" onSave={name => addPlaylist(name, editor.parent)} />}
         {editor.kind === 'rename' && <NameEditor label="Name" action="Save changes" existing={editor.existing} onSave={name => rename(editor.existing, editor.parent, name)} />}
-        {editor.kind === 'text' && <TextEditor existing={editor.existing} onSave={slide => saveItem(editor.parent, slide, editor.existing)} onLive={cue => void send(cue, false)} />}
+        {editor.kind === 'text-library' && (
+          <TextSlideLibrary items={project.textLibrary} playlists={project.playlists} parent={editor.parent}
+            selectedId={editor.selectedId} initialFolder={editor.folder} busy={transmitting}
+            saving={loaded && !saveError && persistedTextLibrary !== project.textLibrary} error={saveError}
+            onCreate={folder => setEditor({ kind: 'text', parent: editor.parent, folder })}
+            onEdit={item => setEditor({ kind: 'text-library-edit', parent: editor.parent, item })}
+            onAdd={(item, parent, root) => addItem(parent, copyLibraryTextSlide(item), root)}
+            onLive={item => sendTextSlide(copyLibraryTextSlide(item))} />
+        )}
+        {editor.kind === 'text' && (
+          <TextEditor existing={editor.existing} busy={transmitting}
+            onSave={slide => saveItem(editor.parent, slide, editor.existing)}
+            onLive={editor.existing ? undefined : sendTextSlide}
+            library={editor.existing ? undefined : {
+              folder: editor.folder ?? '',
+              onBack: () => setEditor({ kind: 'text-library', parent: editor.parent, folder: editor.folder }),
+              onSave: (slide, name, folder) => saveLibraryTextSlide(editor.parent, slide, name, folder),
+            }} />
+        )}
+        {editor.kind === 'text-library-edit' && (
+          <TextEditor existing={editor.item.slide} library={{
+            name: editor.item.name, folder: editor.item.folder,
+            onBack: () => setEditor({ kind: 'text-library', parent: editor.parent, selectedId: editor.item.slide.id }),
+            onSave: (slide, name, folder) => saveLibraryTextSlide(editor.parent, slide, name, folder),
+          }} />
+        )}
         {editor.kind === 'scripture' && <ScriptureEditor existing={editor.existing} busy={transmitting} onSave={cue => saveItem(editor.parent, cue, editor.existing)} onLive={cue => void send(cue, false)} />}
         {editor.kind === 'media' && <MediaBrowser sources={project.sources} initialFilter={editor.filter}
           view={mediaView} onViewChange={setMediaView} onAddFolder={addSource} busy={transmitting}

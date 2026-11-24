@@ -24,6 +24,7 @@ interface PreviewProps {
   onBlackout: () => void
   onClear: () => void
   onNavigateVerse: (verse: PassageVerse) => void
+  textNavigation?: { index: number; total: number; onMove: (direction: -1 | 1) => void }
   onPlayback: (action: PlaybackAction) => void
 }
 
@@ -104,7 +105,7 @@ function VerseNavigation({ reference, busy, onSelect }: {
   }, [translation, book, chapter, verse, key])
 
   return (
-    <div className="live-controls verse-navigation" role="group" aria-label="Live verse navigation" aria-busy={!current}>
+    <div className="live-controls step-navigation" role="group" aria-label="Live verse navigation" aria-busy={!current}>
       <button type="button" className="button" disabled={busy || !previous} onClick={() => previous && onSelect(previous)}>
         <ChevronLeft size={16} aria-hidden="true" /> Previous verse
       </button>
@@ -190,6 +191,14 @@ export function Preview(props: PreviewProps) {
         {media && <MediaPlayback key={stage.revision} stage={stage} onAction={props.onPlayback} />}
         {stage.cue?.kind === 'scripture' && (
           <VerseNavigation reference={stage.cue.reference} busy={props.busy} onSelect={props.onNavigateVerse} />
+        )}
+        {props.textNavigation && (
+          <div className="live-controls step-navigation" role="group" aria-label="Live text slide navigation">
+            <button type="button" className="button" disabled={props.busy || props.textNavigation.index === 0}
+              onClick={() => props.textNavigation?.onMove(-1)}><ChevronLeft size={16} aria-hidden="true" /> Previous slide</button>
+            <button type="button" className="button" disabled={props.busy || props.textNavigation.index + 1 === props.textNavigation.total}
+              onClick={() => props.textNavigation?.onMove(1)}>Next slide <ChevronRight size={16} aria-hidden="true" /></button>
+          </div>
         )}
         <section className="preview-panel preview-panel--next" aria-labelledby="next-heading">
           <header className="preview-heading">
