@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ComponentPropsWithoutRef, type KeyboardEvent, type ReactNode } from 'react'
 import { ArrowDown, ArrowLeft, ArrowUp, Folder, Plus, RadioTower, Trash2, X } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
-import { translateError, type Message } from '../shared/messages'
-import { kindNames, textCueTitle, type Item, type TextEntry, type TextSlide, type Theme } from '../shared/model'
+import { translateError } from '../shared/messages'
+import { builtInSlideDefaults, builtInThemes, kindNames, textCueTitle, type Item, type TextEntry, type TextSlide, type Theme } from '../shared/model'
+import { ThemePreview, ThemeSwatch, useSlideThemes } from '../shared/SlideThemes'
 
-export function Dialog({ title, children, onClose, wide }: {
-  title: string; children: ReactNode; onClose: () => void; wide?: boolean;
+export function Dialog({ title, children, onClose, wide, pinActions }: {
+  title: string; children: ReactNode; onClose: () => void; wide?: boolean; pinActions?: boolean;
 }) {
   const { t } = useLanguage()
   const ref = useRef<HTMLDialogElement>(null)
@@ -18,7 +19,7 @@ export function Dialog({ title, children, onClose, wide }: {
 
   return (
     <dialog
-      className={wide ? 'dialog dialog--wide' : 'dialog'}
+      className={`dialog${wide ? ' dialog--wide' : ''}${pinActions ? ' dialog--pinned-actions' : ''}`}
       ref={ref}
       aria-label={title}
       onCancel={event => { event.preventDefault(); onClose() }}
@@ -35,24 +36,39 @@ export function Dialog({ title, children, onClose, wide }: {
   )
 }
 
-const themes: { value: Theme; label: Message }[] = [
-  { value: 'plain', label: 'Black' },
-  { value: 'twilight', label: 'Twilight' },
-  { value: 'violet', label: 'Violet' },
-]
+export function EditorForm({ children, actions, className = '', ...props }: ComponentPropsWithoutRef<'form'> & {
+  actions: ReactNode
+}) {
+  return (
+    <form {...props} className={`editor-form ${className}`}>
+      <div className="editor editor-content">{children}</div>
+      {actions}
+    </form>
+  )
+}
 
 export function ThemePicker({ value, onChange }: { value: Theme; onChange: (theme: Theme) => void }) {
   const { t } = useLanguage()
+  const { settings } = useSlideThemes()
+  const options = [
+    ...builtInThemes.map(theme => ({ id: theme.id, name: t(theme.label), url: undefined })),
+    ...(settings?.backgrounds ?? []),
+  ]
   return (
     <fieldset className="theme-picker">
       <legend>{t('Background')}</legend>
-      {themes.map(theme => (
-        <label className={`theme-option${theme.value === value ? ' selected' : ''}`} key={theme.value}>
-          <input type="radio" name="theme" value={theme.value} checked={theme.value === value} onChange={() => onChange(theme.value)} />
-          <span className={`theme-swatch slide--${theme.value}`} />
-          {t(theme.label)}
-        </label>
-      ))}
+      <div className="theme-picker-body">
+        <div className="theme-options">
+          {options.map(({ id, name, url }) => (
+            <label className={`theme-option${id === value ? ' selected' : ''}`} key={id} title={name}>
+              <input type="radio" name="theme" value={id} checked={id === value} onChange={() => onChange(id)} />
+              <ThemeSwatch theme={id} url={url} />
+              <span className="theme-option-name">{name}</span>
+            </label>
+          ))}
+        </div>
+        <ThemePreview theme={value} />
+      </div>
     </fieldset>
   )
 }
@@ -94,11 +110,13 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
   }
 }) {
   const { t } = useLanguage()
+  const { settings, error: themeError } = useSlideThemes()
   const [id] = useState(() => existing?.id ?? crypto.randomUUID())
   const [caption, setCaption] = useState(existing?.captionFromFirstEntry ? '' : existing?.title ?? '')
   const [libraryError, setLibraryError] = useState('')
   const [entries, setEntries] = useState<TextEntry[]>(() => existing?.entries ?? [{ id: crypto.randomUUID(), text: '' }])
-  const [theme, setTheme] = useState<Theme>(existing?.theme ?? 'twilight')
+  const [chosenTheme, setTheme] = useState<Theme>()
+  const theme = chosenTheme ?? existing?.theme ?? settings?.defaultThemes.text ?? builtInSlideDefaults.text
   const entryToFocus = useRef<string | null>(null)
 
   const explicitCaption = caption.trim()
@@ -109,9 +127,11 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
     title: explicitCaption || textCueTitle(entries[0]?.text ?? '') || t(kindNames.text),
     entries: entries.map(entry => ({ ...entry, text: entry.text.trim() })),
     theme,
+    showCaption: existing?.showCaption === false && explicitCaption === existing.title.trim() ? false : undefined,
     captionFromFirstEntry: captionFromFirstEntry || undefined,
   }
-  const valid = !busy && slide.entries.length > 0 && slide.entries.every(entry => !!entry.text)
+  const valid = !busy && !!(chosenTheme || existing || settings || themeError)
+    && slide.entries.length > 0 && slide.entries.every(entry => !!entry.text)
 
   function saveToLibrary() {
     if (library && valid) setLibraryError(library.onSave(slide) ?? '')
@@ -142,11 +162,21 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
   }
 
   return (
-    <form className="editor" onKeyDown={liveShortcut} onSubmit={event => {
+    <EditorForm onKeyDown={liveShortcut} onSubmit={event => {
       event.preventDefault()
       if (onSave && valid) onSave(slide)
       else if (!onSave) saveToLibrary()
-    }}>
+    }} actions={
+      <div className="dialog-actions">
+        {onLive && <button type="button" className="button" disabled={!valid} aria-keyshortcuts="Control+Enter" onClick={() => onLive(slide)}>
+          <RadioTower size={15} aria-hidden="true" /> {t('Send to Kiosk')} <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>
+        </button>}
+        <button type="submit" className="button button-primary" disabled={!valid} aria-keyshortcuts="Enter">
+          {onSave ? existing ? t('Save changes') : t('Add to playlist') : t('Save to library')}
+          <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>
+        </button>
+      </div>
+    }>
       {library && (
         <div className="text-library-context">
           <button type="button" className="button button-quiet" onClick={library.onBack}>
@@ -193,16 +223,7 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
       </ol>
       <button type="button" className="button text-entry-add" onClick={addEntry}><Plus size={16} /> {t('Add text entry')}</button>
       <ThemePicker value={theme} onChange={setTheme} />
-      <div className="dialog-actions">
-        {onLive && <button type="button" className="button" disabled={!valid} aria-keyshortcuts="Control+Enter" onClick={() => onLive(slide)}>
-          <RadioTower size={15} aria-hidden="true" /> {t('Send to Kiosk')} <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>
-        </button>}
-        <button type="submit" className="button button-primary" disabled={!valid} aria-keyshortcuts="Enter">
-          {onSave ? existing ? t('Save changes') : t('Add to playlist') : t('Save to library')}
-          <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>
-        </button>
-      </div>
-    </form>
+    </EditorForm>
   )
 }
 

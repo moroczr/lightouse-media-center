@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Monitor, Music2, Video } from 'lucide-react'
 import { useLanguage } from './i18n'
 import { getStage, listenStage, reportPlayback } from './bridge'
-import { emptyStage, isMedia, type AudienceCue, type Stage } from './model'
+import { useSlideThemes } from './SlideThemes'
+import { emptyStage, isBuiltInTheme, isMedia, type AudienceCue, type Stage } from './model'
 
 export function useStage(initial: Stage = emptyStage) {
   const [stage, setStage] = useState(initial)
@@ -33,6 +34,9 @@ export function useStage(initial: Stage = emptyStage) {
 }
 
 function SlideText({ cue }: { cue: Extract<AudienceCue, { text: string }> }) {
+  const { settings } = useSlideThemes()
+  const theme = isBuiltInTheme(cue.theme) ? cue.theme : 'image'
+  const background = theme === 'image' ? settings?.backgrounds.find(image => image.id === cue.theme) : undefined
   const slide = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const [heading, ...rest] = cue.text.split('\n')
@@ -71,7 +75,8 @@ function SlideText({ cue }: { cue: Extract<AudienceCue, { text: string }> }) {
   }, [cue.text, cue.caption])
 
   return (
-    <div ref={slide} className={`slide slide--${cue.theme} slide--${cue.kind} slide--${textSize}`}>
+    <div ref={slide} className={`slide slide--${theme} slide--${cue.kind} slide--${textSize}`}>
+      {background && <div className="slide-background" aria-hidden="true"><img src={background.url} alt="" /></div>}
       <div ref={content} className="slide-content">
         {cue.text && <div className="slide-text">{welcomeLayout ? heading : cue.text}</div>}
         {welcomeLayout && <div className="slide-subtitle">{rest[0]}</div>}

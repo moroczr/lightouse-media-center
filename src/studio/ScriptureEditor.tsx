@@ -3,13 +3,14 @@ import { BookOpen, ChevronDown, ChevronUp, Search } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError } from '../shared/messages'
 import { bible } from '../shared/bridge'
-import { type BibleSettings, type Book, type ScriptureCue, type Theme, type Verse } from '../shared/model'
+import { builtInSlideDefaults, type BibleSettings, type Book, type ScriptureCue, type Theme, type Verse } from '../shared/model'
 import {
   deleteReferenceSegment, lookupReference, normalizeBook, readVerseWindow, referenceSuggestions, verseLabel, verseWindowSize,
   type PassageVerse, type ReferenceSuggestion,
 } from '../shared/scripture'
+import { useSlideThemes } from '../shared/SlideThemes'
 import { canSearchVerseText } from '../shared/verseSearch'
-import { EditorActions, ThemePicker } from './Editors'
+import { EditorActions, EditorForm, ThemePicker } from './Editors'
 
 const segmentLabels = { book: 'Bible books', chapter: 'Chapters', verse: 'Verses' } as const
 
@@ -30,11 +31,14 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
   onLive: (cue: ScriptureCue) => void;
 }) {
   const { t } = useLanguage()
+  const { settings: slideSettings, error: themeError } = useSlideThemes()
   const initial = existing?.reference
   const [requestedTranslation, setTranslation] = useState(initial?.translation)
   const [settings, setSettings] = useState<BibleSettings>()
   const [translationError, setTranslationError] = useState('')
-  const [theme, setTheme] = useState<Theme>(existing?.theme ?? 'violet')
+  const [chosenTheme, setTheme] = useState<Theme>()
+  const theme = chosenTheme ?? existing?.theme ?? slideSettings?.defaultThemes.scripture ?? builtInSlideDefaults.scripture
+  const themeReady = !!(chosenTheme || existing || slideSettings || themeError)
   const [draft, setDraft] = useState<Draft>()
   const [byText, setByText] = useState(false)
   const [query, setQuery] = useState('')
@@ -59,6 +63,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
 
   const translations = settings?.databases.filter(item => item.enabled) ?? []
   const translation = translations.find(item => item.id === (requestedTranslation ?? settings?.defaultId))?.id ?? ''
+  const loadingSettings = !settings && !translationError
   const unavailable = settings && !translation
     ? translations.length ? t('Choose an enabled translation to edit this cue.') : t('Enable a Bible database in Settings to look up verses.')
     : ''
@@ -338,7 +343,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
   }
 
   function submitCue(action: (cue: ScriptureCue) => void) {
-    if (busy || !selected) return
+    if (busy || !selected || !themeReady) return
     action({
       id: existing?.id ?? crypto.randomUUID(), title, kind: 'scripture', theme,
       reference: { translation, book: selected.book.id, chapter: selected.chapter, verse: selected.verse },
@@ -374,10 +379,13 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
   }
 
   return (
-    <form className="editor" onKeyDown={actionKeys} onSubmit={event => {
+    <EditorForm className="scripture-editor-form" onKeyDown={actionKeys} onSubmit={event => {
       event.preventDefault()
       submitCue(onSave)
-    }}>
+    }} actions={
+      <EditorActions editing={!!existing} valid={!!selected && !busy && themeReady} showShortcuts
+        onLive={existing ? undefined : () => submitCue(onLive)} />
+    }>
       <div className="scripture-toolbar">
         <div className="scripture-reference">
           <div className="scripture-search-heading">
@@ -397,7 +405,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
                 inputRef.current = element
                 if (element) element.autofocus = true
               }}
-              disabled={!translation} autoComplete="off" spellCheck={false} maxLength={byText ? 200 : 80}
+              disabled={!loadingSettings && !translation} autoComplete="off" spellCheck={false} maxLength={byText ? 200 : 80}
               value={byText ? query : text} placeholder={byText ? t('e.g. love your enemies') : t('e.g. {book} 2:24', { book: referenceExample })}
               onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); setActiveIndex(-1) }}
               onChange={byText ? event => setQuery(event.target.value) : changeReference}
@@ -470,8 +478,6 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
         </div>
       )}
       <ThemePicker value={theme} onChange={setTheme} />
-      <EditorActions editing={!!existing} valid={!!selected && !busy} showShortcuts
-        onLive={existing ? undefined : () => submitCue(onLive)} />
-    </form>
+    </EditorForm>
   )
 }

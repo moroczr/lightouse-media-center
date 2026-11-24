@@ -104,8 +104,10 @@ export default function Studio() {
   const next = resolved?.item === queued ? resolved?.cue ?? null : null
   const savedDisplay = displayList.find(display => display.id === project.displayId)
   const display = savedDisplay ?? displayList.find(item => !item.studio) ?? displayList[0]
-  const showStandby = !kiosk && stage.revision === 0 && !stage.cue && !desktop
-    && active.id === 'sunday' && queued?.id !== welcomePreview.id && sequence[0]?.id === welcomePreview.id
+  const firstCue = sequence[0]
+  const standby = !kiosk && stage.revision === 0 && !stage.cue && !desktop
+    && active.id === 'sunday' && queued?.id !== welcomePreview.id
+    && firstCue?.kind === 'text' && firstCue.id === welcomePreview.id ? firstCue : null
 
   function tell(text: string, error = false) {
     setNotice({ text, error })
@@ -355,18 +357,25 @@ export default function Studio() {
     setEditor(null)
   }
 
-  function saveItem(parent: string, item: Item, existing?: Item) {
+  function saveItem(parent: string, item: TextSlide | ScriptureCue, existing?: TextSlide | ScriptureCue) {
     if (!existing) { addItem(parent, item); return }
     updatePlaylist(root => updateGroup(root, parent, group => ({
       ...group, children: group.children.map(child => child.id === item.id ? item : child),
     })))
-    if (item.kind === 'text' && existing.kind === 'text') {
+    const previousTextCues = existing.kind === 'text' ? textSlideCues(existing) : []
+    if (item.kind === 'text') {
       setExpanded(current => new Set(current).add(item.id))
-      const oldIndex = textSlideCues(existing).findIndex(cue => cue.id === cueId)
+      const oldIndex = previousTextCues.findIndex(cue => cue.id === cueId)
       const cues = textSlideCues(item)
       if (oldIndex >= 0 && !cues.some(cue => cue.id === cueId)) {
         setCueId(cues[Math.min(oldIndex, cues.length - 1)]?.id ?? null)
       }
+    }
+
+    const shown = stage.cue
+    if (item.theme !== existing.theme && shown?.kind === item.kind
+      && (shown.id === item.id || previousTextCues.some(cue => cue.id === shown.id))) {
+      void updateStage(present({ ...shown, theme: item.theme }, stage.revision))
     }
     setEditor(null)
   }
@@ -595,7 +604,7 @@ export default function Studio() {
         <main className="main">
           <div className="main-inner">
             <Preview
-              stage={stage} standby={showStandby ? welcomePreview : null} background={background?.url} next={next} nextTitle={queued?.title}
+              stage={stage} standby={standby} background={background?.url} next={next} nextTitle={queued?.title}
               nextError={resolved?.item === queued ? resolved?.error ?? '' : ''}
               kiosk={kiosk} busy={transmitting} canGoLive={!!queued && !!next}
               hasPrevious={index > 0 || (index < 0 && sequence.length > 0)} hasNext={index >= 0 && index < sequence.length - 1}
@@ -642,7 +651,10 @@ export default function Studio() {
       </div>}
 
       {editor?.kind === 'settings' && <SettingsDialog onClose={() => setEditor(null)} />}
-      {editor && editor.kind !== 'settings' && <Dialog key={editor.kind} title={title} wide={editor.kind === 'media' || editor.kind === 'scripture' || editor.kind === 'text-library'} onClose={() => setEditor(null)}>
+      {editor && editor.kind !== 'settings' && <Dialog key={editor.kind} title={title}
+        wide={editor.kind === 'media' || editor.kind === 'scripture' || editor.kind === 'text-library'}
+        pinActions={editor.kind === 'text' || editor.kind === 'library-text' || editor.kind === 'scripture'}
+        onClose={() => setEditor(null)}>
         {editor.kind === 'choose' && <div className="add-cue-options">
           {cueMenuItems(editor.parent, 'button')}
         </div>}

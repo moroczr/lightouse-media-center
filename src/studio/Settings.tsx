@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { BookOpen, Globe, Plus } from 'lucide-react'
+import { BookOpen, Globe, Images, Plus } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError, type Language } from '../shared/messages'
 import { bible } from '../shared/bridge'
 import type { BibleSettings } from '../shared/model'
 import { Dialog } from './Editors'
+import { SlidesSettings } from './SlidesSettings'
 
 function errorMessage(reason: unknown) {
   return reason instanceof Error ? reason.message : String(reason)
@@ -13,6 +14,7 @@ function errorMessage(reason: unknown) {
 const tabs = [
   { id: 'general', label: 'General', icon: Globe },
   { id: 'bible', label: 'Bible', icon: BookOpen },
+  { id: 'slides', label: 'Slides', icon: Images },
 ] as const
 
 type Tab = (typeof tabs)[number]['id']
@@ -129,6 +131,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
 
           {error && <p className="settings-error" role="alert">{translateError(t, error)}</p>}
         </div>
+      </section>
+      <section id="slides-settings" role="tabpanel" aria-labelledby="slides-tab" hidden={tab !== 'slides'}>
+        <SlidesSettings busy={busy} onBusyChange={setBusy} />
       </section>
       <div className="dialog-actions settings-actions">
         <button type="button" className="button button-primary" disabled={busy} onClick={onClose}>{t('Done')}</button>

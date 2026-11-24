@@ -1,4 +1,32 @@
-export type Theme = 'plain' | 'twilight' | 'violet'
+export const builtInThemes = [
+  { id: 'plain', label: 'Black' },
+  { id: 'twilight', label: 'Twilight' },
+  { id: 'violet', label: 'Violet' },
+  { id: 'midnight', label: 'Midnight Blue' },
+  { id: 'forest', label: 'Forest' },
+  { id: 'ember', label: 'Ember' },
+  { id: 'slate', label: 'Slate' },
+] as const
+
+export type BuiltInTheme = (typeof builtInThemes)[number]['id']
+export type ImageTheme = `image:${string}`
+export type Theme = BuiltInTheme | ImageTheme
+export type SlideKind = 'text' | 'scripture'
+
+export const builtInSlideDefaults = { text: 'twilight', scripture: 'violet' } as const satisfies Record<SlideKind, BuiltInTheme>
+
+export function isBuiltInTheme(theme: string): theme is BuiltInTheme {
+  return builtInThemes.some(({ id }) => id === theme)
+}
+
+export interface SlideBackground extends BackgroundImage {
+  id: ImageTheme
+}
+
+export interface SlideSettings {
+  defaultThemes: Record<SlideKind, Theme | null>
+  backgrounds: SlideBackground[]
+}
 
 export interface Reference {
   translation: string
@@ -93,7 +121,7 @@ export interface Project {
   displayId: string | null
 }
 
-export interface KioskBackground {
+export interface BackgroundImage {
   name: string
   url: string
 }

@@ -12,6 +12,8 @@ use tauri_plugin_dialog::DialogExt;
 
 #[path = "bible_settings.rs"]
 pub(crate) mod bible_settings;
+#[path = "slide_settings.rs"]
+pub(crate) mod slide_settings;
 
 const VIDEO: &[&str] = &["mp4", "m4v", "mov", "webm", "ogv"];
 const AUDIO: &[&str] = &["mp3", "m4a", "aac", "wav", "ogg", "oga", "flac", "opus"];
@@ -95,7 +97,7 @@ pub struct MediaFile {
 }
 
 #[derive(Clone, Deserialize, Serialize)]
-pub struct KioskBackground {
+pub struct BackgroundImage {
     name: String,
     url: String,
 }
@@ -123,6 +125,7 @@ impl Library {
             ",
         )?;
         bible_settings::initialize(&db)?;
+        slide_settings::initialize(&db)?;
         let bible_directory = directory.join("bibles");
         fs::create_dir_all(&bible_directory)?;
         for (id, name, source_id, source) in BIBLES {
@@ -228,7 +231,7 @@ impl Library {
             .transpose()
     }
 
-    fn kiosk_background(&self) -> CommandResult<Option<KioskBackground>> {
+    fn kiosk_background(&self) -> CommandResult<Option<BackgroundImage>> {
         self.db()?
             .query_row(
                 "SELECT name, mime, data FROM kiosk_background WHERE id = 1",
@@ -237,7 +240,7 @@ impl Library {
                     let name: String = row.get(0)?;
                     let mime: String = row.get(1)?;
                     let data: Vec<u8> = row.get(2)?;
-                    Ok(KioskBackground {
+                    Ok(BackgroundImage {
                         name,
                         url: image_url(&mime, &data),
                     })
@@ -247,22 +250,9 @@ impl Library {
             .map_err(message)
     }
 
-    fn save_kiosk_background(&self, background: Option<&KioskBackground>) -> CommandResult<()> {
+    fn save_kiosk_background(&self, background: Option<&BackgroundImage>) -> CommandResult<()> {
         if let Some(background) = background {
-            let (header, encoded) = background
-                .url
-                .split_once(',')
-                .ok_or("Invalid background image.")?;
-            if encoded.len() > MAX_BACKGROUND_SIZE.div_ceil(3) * 4 {
-                return Err("Choose an image smaller than 10 MB.".into());
-            }
-            let data = BASE64
-                .decode(encoded)
-                .map_err(|_| "Invalid background image.")?;
-            let mime = background_mime(&data)?;
-            if header != format!("data:{mime};base64") {
-                return Err("Invalid background image.".into());
-            }
+            let (mime, data) = decode_background(&background.url)?;
             self.db()?.execute(
                 "INSERT INTO kiosk_background VALUES (1, ?1, ?2, ?3)
                  ON CONFLICT(id) DO UPDATE SET name = excluded.name, mime = excluded.mime, data = excluded.data",
@@ -485,6 +475,21 @@ fn background_mime(data: &[u8]) -> CommandResult<&'static str> {
     }
 }
 
+fn decode_background(url: &str) -> CommandResult<(&'static str, Vec<u8>)> {
+    let (header, encoded) = url.split_once(',').ok_or("Invalid background image.")?;
+    if encoded.len() > MAX_BACKGROUND_SIZE.div_ceil(3) * 4 {
+        return Err("Choose an image smaller than 10 MB.".into());
+    }
+    let data = BASE64
+        .decode(encoded)
+        .map_err(|_| "Invalid background image.")?;
+    let mime = background_mime(&data)?;
+    if header != format!("data:{mime};base64") {
+        return Err("Invalid background image.".into());
+    }
+    Ok((mime, data))
+}
+
 fn image_url(mime: &str, data: &[u8]) -> String {
     format!("data:{mime};base64,{}", BASE64.encode(data))
 }
@@ -493,7 +498,7 @@ fn image_url(mime: &str, data: &[u8]) -> String {
 pub fn load_kiosk_background(
     window: WebviewWindow,
     library: State<'_, Library>,
-) -> CommandResult<Option<KioskBackground>> {
+) -> CommandResult<Option<BackgroundImage>> {
     if window.label() != "kiosk" {
         studio_only(&window)?;
     }
@@ -506,7 +511,7 @@ pub async fn pick_kiosk_background(
     app: AppHandle,
     title: Option<String>,
     filter_name: Option<String>,
-) -> CommandResult<Option<KioskBackground>> {
+) -> CommandResult<Option<BackgroundImage>> {
     studio_only(&window)?;
     let Some(picked) = app
         .dialog()
@@ -537,7 +542,7 @@ pub async fn pick_kiosk_background(
         .and_then(|file| file.to_str())
         .unwrap_or("Kiosk background")
         .to_owned();
-    Ok(Some(KioskBackground {
+    Ok(Some(BackgroundImage {
         name,
         url: image_url(mime, &data),
     }))
@@ -548,7 +553,7 @@ pub fn save_kiosk_background(
     window: WebviewWindow,
     app: AppHandle,
     library: State<'_, Library>,
-    background: Option<KioskBackground>,
+    background: Option<BackgroundImage>,
 ) -> CommandResult<()> {
     studio_only(&window)?;
     library.save_kiosk_background(background.as_ref())?;

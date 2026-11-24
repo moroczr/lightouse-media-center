@@ -30,6 +30,8 @@ Use the sidebar toggle at the top left to hide or restore the playlists and libr
 
 Under **Slides** in the sidebar, choose **New library** and enter a name such as `Worships`. Open a library, choose **New text slide**, and select **Save to library**. The caption also names the slide. If it is blank, the first text entry supplies the caption and its first line supplies the name. Select a saved set to edit it, add a copy to any playlist, or send it directly to Kiosk. The **Previous slide** and **Next slide** buttons under **Live output** navigate a set sent directly. Open **Text slide** for an overview of all libraries or choose **One-off text slide** to add or send text for a single use.
 
+Open **Settings → Slides** to add PNG, JPEG, or WebP backgrounds and set separate default themes for new text slides and Bible verse cues. Built-in themes and imported images are available in each slide’s **Background** picker. Changing the default only affects new slides.
+
 Add folders under **Media sources**, then open **Add Media** to search across those folders and their subfolders. Switch between list and tile views, filter by **Movies** or **Audio**, and select a file to add to the playlist or send to Kiosk. Use **Open file** for a file outside your sources. The app keeps references to the original files. For cross-platform playback, start with H.264/AAC video in MP4 and MP3 or WAV audio. Additional codecs depend on the system WebView.
 
 Change the interface language under **Settings → General → Language**. Choose **English** or **Magyar** (Hungarian). The app remembers your choice.

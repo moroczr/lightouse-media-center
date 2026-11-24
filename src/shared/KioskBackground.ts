@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { listenKioskBackground, loadKioskBackground } from './bridge'
-import { type KioskBackground } from './model'
+import { type BackgroundImage } from './model'
 
 export function useKioskBackground() {
-  const [background, setBackground] = useState<KioskBackground | null>(null)
+  const [background, setBackground] = useState<BackgroundImage | null>(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -11,7 +11,7 @@ export function useKioskBackground() {
     let receivedUpdate = false
     let unlisten: (() => void) | undefined
 
-    function apply(image: KioskBackground | null) {
+    function apply(image: BackgroundImage | null) {
       setBackground(image)
       setError('')
     }

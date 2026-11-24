@@ -3,10 +3,10 @@ import { ImagePlus, Trash2 } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError } from '../shared/messages'
 import { pickKioskBackground, saveKioskBackground } from '../shared/bridge'
-import { type KioskBackground } from '../shared/model'
+import { type BackgroundImage } from '../shared/model'
 
 export function KioskBackgroundEditor({ background, loadError }: {
-  background: KioskBackground | null
+  background: BackgroundImage | null
   loadError: string
 }) {
   const { t } = useLanguage()

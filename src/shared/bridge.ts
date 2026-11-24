@@ -1,9 +1,10 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { addBrowserSlideBackground, loadBrowserSlideSettings, saveBrowserDefaultSlideTheme } from './browserSlideSettings'
 import { browserBibleSettings, importBrowserBible, loadBrowserBible, saveBrowserBibleSettings } from './browserBible'
 import {
-  type AudienceCue, type BiblePreferences, type BibleSettings, type Book, type Cue, type Display, type Group, type KioskBackground, type MediaFile, type PlaybackAction, type Project,
-  type Reference, type SavedProject, type Source, type Stage, type Verse, emptyStage, isMedia, normalizeProject,
+  type AudienceCue, type BiblePreferences, type BibleSettings, type Book, type Cue, type Display, type Group, type BackgroundImage, type MediaFile, type PlaybackAction, type Project,
+  type Reference, type SavedProject, type SlideKind, type SlideSettings, type Source, type Stage, type Theme, type Verse, emptyStage, isMedia, normalizeProject,
 } from './model'
 import { formatScriptureCue, readAdjacentVerses, verseLabel } from './scripture'
 import { readLanguage, translate, type Message } from './messages'
@@ -21,6 +22,7 @@ function dialogLabels(title: Message, filter?: Message) {
 const projectKey = 'lighthouse-project-v1'
 const backgroundKey = 'nemesa-kiosk-background'
 const backgroundEvent = 'kiosk-background-updated'
+const slideSettingsEvent = 'slide-settings-updated'
 const channel = desktop ? null : new BroadcastChannel('nemesa-stage')
 const browserFiles = new Map<string, File>()
 const browserUrls = new Map<string, string>()
@@ -104,15 +106,15 @@ export function saveProject(project: Project): Promise<void> {
   return Promise.resolve()
 }
 
-export async function loadKioskBackground(): Promise<KioskBackground | null> {
+export async function loadKioskBackground(): Promise<BackgroundImage | null> {
   if (desktop) return invoke('load_kiosk_background')
   const saved = localStorage.getItem(backgroundKey)
   return saved ? JSON.parse(saved) : null
 }
 
-export async function listenKioskBackground(callback: (background: KioskBackground | null) => void) {
-  if (desktop) return listen<KioskBackground | null>(backgroundEvent, event => callback(event.payload))
-  const local = (event: Event) => callback((event as CustomEvent<KioskBackground | null>).detail)
+export async function listenKioskBackground(callback: (background: BackgroundImage | null) => void) {
+  if (desktop) return listen<BackgroundImage | null>(backgroundEvent, event => callback(event.payload))
+  const local = (event: Event) => callback((event as CustomEvent<BackgroundImage | null>).detail)
   const remote = (event: StorageEvent) => {
     if (event.key === backgroundKey) callback(event.newValue ? JSON.parse(event.newValue) : null)
   }
@@ -124,13 +126,15 @@ export async function listenKioskBackground(callback: (background: KioskBackgrou
   }
 }
 
-export async function saveKioskBackground(background: KioskBackground | null) {
-  if (background) {
-    const image = new Image()
-    image.src = background.url
-    try { await image.decode() }
-    catch { throw new Error('The selected image could not be opened.') }
-  }
+async function validateBackground(url: string) {
+  const image = new Image()
+  image.src = url
+  try { await image.decode() }
+  catch { throw new Error('The selected image could not be opened.') }
+}
+
+export async function saveKioskBackground(background: BackgroundImage | null) {
+  if (background) await validateBackground(background.url)
   if (desktop) return invoke<void>('save_kiosk_background', { background })
   try {
     if (background) localStorage.setItem(backgroundKey, JSON.stringify(background))
@@ -308,8 +312,12 @@ function fileInput(accept: string, folder = false): Promise<File[]> {
   })
 }
 
-export async function pickKioskBackground(): Promise<KioskBackground | null> {
-  if (desktop) return invoke('pick_kiosk_background', dialogLabels('Choose the Kiosk background', 'Images'))
+export function pickKioskBackground() {
+  return pickBackground('Choose the Kiosk background')
+}
+
+async function pickBackground(title: Message): Promise<BackgroundImage | null> {
+  if (desktop) return invoke('pick_kiosk_background', dialogLabels(title, 'Images'))
   const [file] = await fileInput('image/png,image/jpeg,image/webp')
   if (!file) return null
   if (file.size > 10 * 1024 * 1024) throw new Error('Choose an image smaller than 10 MB.')
@@ -323,6 +331,36 @@ export async function pickKioskBackground(): Promise<KioskBackground | null> {
     reader.readAsDataURL(file)
   })
   return { name: file.name, url }
+}
+
+export const slideSettings = {
+  load: () => desktop ? invoke<SlideSettings>('load_slide_settings') : loadBrowserSlideSettings(),
+  saveDefault: async (kind: SlideKind, theme: Theme | null) => {
+    if (desktop) await invoke<void>('save_default_slide_theme', { kind, theme })
+    else {
+      saveBrowserDefaultSlideTheme(kind, theme)
+      channel?.postMessage({ type: slideSettingsEvent })
+    }
+  },
+  importBackground: async () => {
+    const background = await pickBackground('Choose a slide background')
+    if (!background) return false
+    await validateBackground(background.url)
+    if (desktop) await invoke<void>('add_slide_background', { background })
+    else {
+      await addBrowserSlideBackground(background)
+      channel?.postMessage({ type: slideSettingsEvent })
+    }
+    return true
+  },
+  listen: async (onUpdate: () => void) => {
+    if (desktop) return listen(slideSettingsEvent, onUpdate)
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === slideSettingsEvent) onUpdate()
+    }
+    channel?.addEventListener('message', onMessage)
+    return () => channel?.removeEventListener('message', onMessage)
+  },
 }
 
 const video = /\.(mp4|m4v|mov|webm|ogv)$/i
