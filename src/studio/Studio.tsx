@@ -10,7 +10,7 @@ import {
   controlPlayback, present, resolveCue, saveProject, setBlackout,
 } from '../shared/bridge'
 import {
-  findCueAncestors, flatten, kindNames, mediaCue, starterProject, updateGroup,
+  findCueAncestors, flatten, kindNames, mediaCue, starterProject, textSlideCues, updateGroup,
   type AudienceCue, type Cue, type Display, type Group, type Item, type ItemKind,
   type Project, type ScriptureCue, type TextSlide, welcomePreview,
 } from '../shared/model'
@@ -32,7 +32,21 @@ type Editor =
   | { kind: 'rename'; parent: string | null; existing: Item }
   | { kind: 'remove'; parent: string | null; item: Item }
 
-const cueKinds: ItemKind[] = ['text', 'scripture', 'video', 'audio', 'playlist']
+type AddCueKind = ItemKind | 'media'
+
+const libraryActions = {
+  media: { kind: 'media', label: 'Add Media', shortcut: 'M', icon: LibraryBig },
+  scripture: { kind: 'scripture', label: 'Bible lookup', shortcut: 'B', icon: BookOpen },
+  text: { kind: 'text', label: kindNames.text, shortcut: 'T', icon: Type },
+} as const
+
+const libraryItems = Object.values(libraryActions)
+const cueActions: readonly { kind: AddCueKind; label: string; shortcut?: string }[] = [
+  libraryActions.text, libraryActions.scripture, libraryActions.media,
+  { kind: 'video', label: kindNames.video },
+  { kind: 'audio', label: kindNames.audio },
+  { kind: 'playlist', label: kindNames.playlist },
+]
 
 function errorText(reason: unknown) {
   return reason instanceof Error ? reason.message : String(reason)
@@ -261,9 +275,19 @@ export default function Studio() {
 
   useEffect(() => {
     function shortcuts(event: KeyboardEvent) {
+      if (event.altKey || event.metaKey || event.repeat || event.isComposing || event.defaultPrevented) return
       const target = event.target
-      if (editor || event.altKey || event.ctrlKey || event.metaKey || event.repeat
-        || (target instanceof HTMLElement && target.closest('input, textarea, select, button, summary, [contenteditable]'))) return
+      if (event.ctrlKey) {
+        if (event.shiftKey || (editor && editor.kind !== 'choose')) return
+        const action = libraryItems.find(item => item.shortcut === event.key.toUpperCase())
+        if (!action) return
+        event.preventDefault()
+        const openMenu = target instanceof HTMLElement ? target.closest<HTMLDetailsElement>('details.menu') : null
+        if (openMenu) openMenu.open = false
+        openEditor(action.kind, editor?.kind === 'choose' ? editor.parent : active.id)
+        return
+      }
+      if (editor || (target instanceof HTMLElement && target.closest('input, textarea, select, button, summary, [contenteditable]'))) return
       if (event.key === 'ArrowUp' && (index > 0 || index < 0)) { event.preventDefault(); nudge(-1) }
       if (event.key === 'ArrowDown') { event.preventDefault(); nudge(1) }
       if (event.key === 'Enter' && queued && next) { event.preventDefault(); goLive() }
@@ -295,9 +319,10 @@ export default function Studio() {
     })))
     if (item.kind === 'text' && existing.kind === 'text') {
       setExpanded(current => new Set(current).add(item.id))
-      const oldIndex = existing.entries.findIndex(entry => entry.id === cueId)
-      if (oldIndex >= 0 && !item.entries.some(entry => entry.id === cueId)) {
-        setCueId(item.entries[Math.min(oldIndex, item.entries.length - 1)]?.id ?? null)
+      const oldIndex = textSlideCues(existing).findIndex(cue => cue.id === cueId)
+      const cues = textSlideCues(item)
+      if (oldIndex >= 0 && !cues.some(cue => cue.id === cueId)) {
+        setCueId(cues[Math.min(oldIndex, cues.length - 1)]?.id ?? null)
       }
     }
     setEditor(null)
@@ -316,12 +341,23 @@ export default function Studio() {
     void addSource().catch(reason => tell(errorText(reason), true))
   }
 
-  function openEditor(kind: ItemKind, parent: string) {
+  function openEditor(kind: AddCueKind, parent: string) {
     if (kind === 'video' || kind === 'audio') {
       setEditor({ kind: 'media', parent, filter: kind })
       return
     }
     setEditor({ kind, parent })
+  }
+
+  function cueMenuItems(parent: string, className?: string) {
+    return cueActions.map(({ kind, label, shortcut }) => (
+      <button type="button" key={kind} className={className} onClick={() => openEditor(kind, parent)}
+        aria-keyshortcuts={shortcut ? `Control+${shortcut}` : undefined}>
+        {kind === 'media' ? <LibraryBig size={16} aria-hidden="true" /> : <ItemIcon kind={kind} size={14} />}
+        {label}
+        {shortcut && <kbd className="cue-shortcut" aria-hidden="true">Ctrl+{shortcut}</kbd>}
+      </button>
+    ))
   }
 
   function editItem(item: Item, parent: string) {
@@ -399,7 +435,7 @@ export default function Studio() {
             {sidebarOpen ? <PanelLeftClose size={17} aria-hidden="true" /> : <PanelLeftOpen size={17} aria-hidden="true" />}
           </button>
           <Menu primary label="Add cue" trigger={<><Plus size={17} /> Add cue <ChevronDown size={15} /></>}>
-            {cueKinds.map(kind => <button key={kind} onClick={() => openEditor(kind, active.id)}><ItemIcon kind={kind} size={14} /> {kindNames[kind]}</button>)}
+            {cueMenuItems(active.id)}
           </Menu>
           <Menu label="Playlist actions" trigger={<Ellipsis size={19} />}>
             <button onClick={() => setEditor({ kind: 'rename', parent: null, existing: active })}><Pencil size={15} /> Rename playlist</button>
@@ -441,9 +477,13 @@ export default function Studio() {
             </section>
             <section className="sidebar-section">
               <div className="sidebar-heading"><h2>Library</h2></div>
-              <button className="sidebar-item" onClick={() => setEditor({ kind: 'media', parent: active.id })}><LibraryBig size={17} /><span>Add Media</span></button>
-              <button className="sidebar-item" onClick={() => setEditor({ kind: 'scripture', parent: active.id })}><BookOpen size={17} /><span>Bible lookup</span></button>
-              <button className="sidebar-item" onClick={() => setEditor({ kind: 'text', parent: active.id })}><Type size={17} /><span>Text slide</span></button>
+              {libraryItems.map(({ kind, label, shortcut, icon: Icon }) => (
+                <button type="button" key={kind} className="sidebar-item"
+                  onClick={() => openEditor(kind, active.id)} aria-keyshortcuts={`Control+${shortcut}`}>
+                  <Icon size={17} aria-hidden="true" /><span>{label}</span>
+                  <kbd className="cue-shortcut" aria-hidden="true">Ctrl+{shortcut}</kbd>
+                </button>
+              ))}
             </section>
             <section className="sidebar-section">
               <div className="sidebar-heading"><h2>Media sources</h2><button className="icon-button" title="Add source folder" aria-label="Add source folder" onClick={addSourceFromSidebar}><Plus size={17} /></button></div>
@@ -513,7 +553,7 @@ export default function Studio() {
 
       {editor && <Dialog key={editor.kind} title={title} wide={editor.kind === 'media' || editor.kind === 'scripture'} onClose={() => setEditor(null)}>
         {editor.kind === 'choose' && <div className="add-cue-options">
-          {cueKinds.map(kind => <button className="button" onClick={() => openEditor(kind, editor.parent)} key={kind}><ItemIcon kind={kind} />{kindNames[kind]}</button>)}
+          {cueMenuItems(editor.parent, 'button')}
         </div>}
         {editor.kind === 'playlist' && <NameEditor label="Playlist name" action="Create playlist" onSave={name => addPlaylist(name, editor.parent)} />}
         {editor.kind === 'rename' && <NameEditor label="Name" action="Save changes" existing={editor.existing} onSave={name => rename(editor.existing, editor.parent, name)} />}

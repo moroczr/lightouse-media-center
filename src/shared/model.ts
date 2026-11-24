@@ -45,7 +45,13 @@ export interface TextEntry {
   text: string
 }
 
-export type TextSlide = ItemBase & { kind: 'text'; theme: Theme; entries: TextEntry[]; showCaption?: false }
+export type TextSlide = ItemBase & {
+  kind: 'text'
+  theme: Theme
+  entries: TextEntry[]
+  showCaption?: false
+  captionFromFirstEntry?: true
+}
 export type TextCue = ItemBase & { kind: 'text'; text: string; theme: Theme; caption?: string }
 export type ScriptureCue = ItemBase & { kind: 'scripture'; reference: Reference; theme: Theme }
 type MediaCue = ItemBase & { kind: 'video' | 'audio'; path: string }
@@ -145,12 +151,20 @@ export function normalizeProject(project: SavedProject): Project {
   return { ...project, playlists: project.playlists.map(migrateGroup) }
 }
 
+export function textCueTitle(text: string) {
+  return text.trimStart().split(/\r?\n/, 1)[0].slice(0, 100)
+}
+
 export function textSlideCues(slide: TextSlide): TextCue[] {
-  return slide.entries.map(entry => ({
-    ...entry,
+  const firstEntry = slide.captionFromFirstEntry ? slide.entries[0] : undefined
+  const caption = firstEntry?.text ?? (slide.showCaption === false ? undefined : slide.title)
+  const entries = firstEntry && slide.entries.length > 1 ? slide.entries.slice(1) : slide.entries
+  return entries.map(entry => ({
+    id: entry.id,
     kind: 'text',
-    title: entry.text.trimStart().split('\n', 1)[0].slice(0, 100),
-    caption: slide.showCaption === false ? undefined : slide.title,
+    title: textCueTitle(entry.text),
+    text: entry === firstEntry ? '' : entry.text,
+    caption,
     theme: slide.theme,
   }))
 }
@@ -169,7 +183,7 @@ export function findCueAncestors(items: Item[], cueId: string): string[] | undef
       const ancestors = findCueAncestors(item.children, cueId)
       if (ancestors) return [item.id, ...ancestors]
     } else if (item.kind === 'text') {
-      if (item.entries.some(entry => entry.id === cueId)) return [item.id]
+      if (textSlideCues(item).some(cue => cue.id === cueId)) return [item.id]
     } else if (item.id === cueId) {
       return []
     }

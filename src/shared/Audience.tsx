@@ -72,7 +72,7 @@ function SlideText({ cue }: { cue: Extract<AudienceCue, { text: string }> }) {
   return (
     <div ref={slide} className={`slide slide--${cue.theme} slide--${cue.kind} slide--${textSize}`}>
       <div ref={content} className="slide-content">
-        <div className="slide-text">{welcomeLayout ? heading : cue.text}</div>
+        {cue.text && <div className="slide-text">{welcomeLayout ? heading : cue.text}</div>}
         {welcomeLayout && <div className="slide-subtitle">{rest[0]}</div>}
         {cue.caption && <div className="slide-caption">{cue.caption}</div>}
       </div>

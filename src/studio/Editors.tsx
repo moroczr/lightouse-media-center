@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, Plus, RadioTower, Trash2, X } from 'lucide-react'
-import { textSlideCues, type Item, type TextCue, type TextEntry, type TextSlide, type Theme } from '../shared/model'
+import { kindNames, textCueTitle, textSlideCues, type Item, type TextCue, type TextEntry, type TextSlide, type Theme } from '../shared/model'
 
 export function Dialog({ title, children, onClose, wide }: {
   title: string; children: ReactNode; onClose: () => void; wide?: boolean;
@@ -73,21 +73,24 @@ export function TextEditor({ existing, onSave, onLive }: {
   onSave: (slide: TextSlide) => void;
   onLive: (cue: TextCue) => void;
 }) {
-  const [caption, setCaption] = useState(existing?.title ?? '')
+  const [id] = useState(() => existing?.id ?? crypto.randomUUID())
+  const [caption, setCaption] = useState(existing?.captionFromFirstEntry ? '' : existing?.title ?? '')
   const [entries, setEntries] = useState<TextEntry[]>(() => existing?.entries ?? [{ id: crypto.randomUUID(), text: '' }])
   const [theme, setTheme] = useState<Theme>(existing?.theme ?? 'twilight')
   const entryToFocus = useRef<string | null>(null)
-  const valid = !!caption.trim() && entries.every(entry => !!entry.text.trim())
 
-  function makeSlide(): TextSlide {
-    return {
-      id: existing?.id ?? crypto.randomUUID(),
-      kind: 'text',
-      title: caption.trim(),
-      entries: entries.map(entry => ({ ...entry, text: entry.text.trim() })),
-      theme,
-    }
+  const explicitCaption = caption.trim()
+  const captionFromFirstEntry = !explicitCaption
+  const slide: TextSlide = {
+    id,
+    kind: 'text',
+    title: explicitCaption || textCueTitle(entries[0]?.text ?? '') || kindNames.text,
+    entries: entries.map(entry => ({ ...entry, text: entry.text.trim() })),
+    theme,
+    captionFromFirstEntry: captionFromFirstEntry || undefined,
   }
+  const valid = slide.entries.length > 0 && slide.entries.every(entry => !!entry.text)
+  const cues = textSlideCues(slide)
 
   function addEntry() {
     const id = crypto.randomUUID()
@@ -107,11 +110,16 @@ export function TextEditor({ existing, onSave, onLive }: {
   }
 
   return (
-    <form className="editor" onSubmit={event => { event.preventDefault(); if (valid) onSave(makeSlide()) }}>
-      <label>Caption<input autoFocus required value={caption} maxLength={100} onChange={event => setCaption(event.target.value)} /></label>
+    <form className="editor" onSubmit={event => { event.preventDefault(); if (valid) onSave(slide) }}>
+      <label>
+        Caption (optional)
+        <input autoFocus value={caption} maxLength={100} placeholder="Uses the first text entry if blank"
+          onChange={event => setCaption(event.target.value)} />
+      </label>
       <ol className="text-entries">
         {entries.map((entry, index) => {
-          const label = `Slide ${index + 1}`
+          const label = captionFromFirstEntry && index === 0
+            ? 'Caption text' : `Slide ${captionFromFirstEntry ? index : index + 1}`
           return (
             <li className="text-entry" key={entry.id}>
               <div className="text-entry-header">
@@ -119,7 +127,7 @@ export function TextEditor({ existing, onSave, onLive }: {
                 <div className="text-entry-actions">
                   <button type="button" className="icon-button" aria-label={`Move ${label.toLowerCase()} up`} title="Move up" disabled={index === 0} onClick={() => moveEntry(index, -1)}><ArrowUp size={15} /></button>
                   <button type="button" className="icon-button" aria-label={`Move ${label.toLowerCase()} down`} title="Move down" disabled={index === entries.length - 1} onClick={() => moveEntry(index, 1)}><ArrowDown size={15} /></button>
-                  <button type="button" className="icon-button" aria-label={`Remove ${label.toLowerCase()}`} title="Remove slide" disabled={entries.length === 1} onClick={() => setEntries(current => current.filter(item => item.id !== entry.id))}><Trash2 size={15} /></button>
+                  <button type="button" className="icon-button" aria-label={`Remove ${label.toLowerCase()}`} title="Remove text entry" disabled={entries.length === 1} onClick={() => setEntries(current => current.filter(item => item.id !== entry.id))}><Trash2 size={15} /></button>
                 </div>
               </div>
               <textarea id={`text-entry-${entry.id}`} rows={3} required maxLength={1600} value={entry.text}
@@ -141,7 +149,7 @@ export function TextEditor({ existing, onSave, onLive }: {
       <button type="button" className="button text-entry-add" onClick={addEntry}><Plus size={16} /> Add text entry</button>
       <ThemePicker value={theme} onChange={setTheme} />
       <EditorActions editing={!!existing} valid={valid}
-        onLive={!existing && entries.length === 1 ? () => onLive(textSlideCues(makeSlide())[0]) : undefined} />
+        onLive={!existing && cues.length === 1 ? () => onLive(cues[0]) : undefined} />
     </form>
   )
 }
