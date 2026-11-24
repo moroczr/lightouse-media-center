@@ -26,6 +26,7 @@ fn main() {
             library::translations,
             library::books,
             library::verses,
+            library::bible_search_data,
             library::pick_folder,
             library::pick_media,
             library::list_media,

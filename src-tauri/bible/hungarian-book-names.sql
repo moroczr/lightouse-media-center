@@ -1,0 +1,80 @@
+-- Apply to Hungarian editions imported from Biblia-json-xml.
+-- The Bible Society's Károli index supplies the book names, using short citation forms here.
+-- https://abibliamindenkie.hu/karoli
+BEGIN IMMEDIATE;
+
+WITH hungarian_names (id, name) AS (
+    VALUES
+        ('GEN', 'Mózes 1. könyve'),
+        ('EXO', 'Mózes 2. könyve'),
+        ('LEV', 'Mózes 3. könyve'),
+        ('NUM', 'Mózes 4. könyve'),
+        ('DEU', 'Mózes 5. könyve'),
+        ('JOS', 'Józsué'),
+        ('JDG', 'Bírák'),
+        ('RUT', 'Ruth'),
+        ('1SA', '1 Sámuel'),
+        ('2SA', '2 Sámuel'),
+        ('1KI', '1 Királyok'),
+        ('2KI', '2 Királyok'),
+        ('1CH', '1 Krónikák'),
+        ('2CH', '2 Krónikák'),
+        ('EZR', 'Ezsdrás'),
+        ('NEH', 'Nehémiás'),
+        ('EST', 'Eszter'),
+        ('JOB', 'Jób'),
+        ('PSA', 'Zsoltárok'),
+        ('PRO', 'Példabeszédek'),
+        ('ECC', 'Prédikátor'),
+        ('SOL', 'Énekek éneke'),
+        ('ISA', 'Ézsaiás'),
+        ('JER', 'Jeremiás'),
+        ('LAM', 'Jeremiás siralmai'),
+        ('EZE', 'Ezékiel'),
+        ('DAN', 'Dániel'),
+        ('HOS', 'Hóseás'),
+        ('JOE', 'Jóel'),
+        ('AMO', 'Ámós'),
+        ('OBA', 'Abdiás'),
+        ('JON', 'Jónás'),
+        ('MIC', 'Mikeás'),
+        ('NAH', 'Náhum'),
+        ('HAB', 'Habakuk'),
+        ('ZEP', 'Sofóniás'),
+        ('HAG', 'Aggeus'),
+        ('ZEC', 'Zakariás'),
+        ('MAL', 'Malakiás'),
+        ('MAT', 'Máté'),
+        ('MAR', 'Márk'),
+        ('LUK', 'Lukács'),
+        ('JOH', 'János'),
+        ('ACT', 'Apostolok cselekedetei'),
+        ('ROM', 'Róma'),
+        ('1CO', '1 Korinthus'),
+        ('2CO', '2 Korinthus'),
+        ('GAL', 'Galata'),
+        ('EPH', 'Efézus'),
+        ('PHI', 'Filippi'),
+        ('COL', 'Kolossé'),
+        ('1TH', '1 Thesszalonika'),
+        ('2TH', '2 Thesszalonika'),
+        ('1TI', '1 Timóteus'),
+        ('2TI', '2 Timóteus'),
+        ('TIT', 'Titusz'),
+        ('PHM', 'Filemon'),
+        ('HEB', 'Zsidók'),
+        ('JAM', 'Jakab'),
+        ('1PE', '1 Péter'),
+        ('2PE', '2 Péter'),
+        ('1JO', '1 János'),
+        ('2JO', '2 János'),
+        ('3JO', '3 János'),
+        ('JUD', 'Júdás'),
+        ('REV', 'Jelenések')
+)
+UPDATE books
+SET name = (SELECT name FROM hungarian_names WHERE hungarian_names.id = books.id)
+WHERE translation GLOB 'H_*'
+  AND id IN (SELECT id FROM hungarian_names);
+
+COMMIT;

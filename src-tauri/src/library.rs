@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -14,15 +14,18 @@ const VIDEO: &[&str] = &["mp4", "m4v", "mov", "webm", "ogv"];
 const AUDIO: &[&str] = &["mp3", "m4a", "aac", "wav", "ogg", "oga", "flac", "opus"];
 const BACKGROUND_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp"];
 const MAX_BACKGROUND_SIZE: usize = 10 * 1024 * 1024;
-const BIBLES: &[(&str, &str, &str)] = &[
+const BIBLE_SCHEMA: &str = include_str!("../bible/schema.sql");
+const BIBLES: &[(&str, &str, &str, &str)] = &[
     (
         "WEBP",
         "World English Bible",
+        "engwebp",
         include_str!("../../public/bible-WEBP.json"),
     ),
     (
         "WEBPB",
         "World English Bible (British)",
+        "engwebpb",
         include_str!("../../public/bible-WEBPB.json"),
     ),
 ];
@@ -31,6 +34,7 @@ type CommandResult<T> = Result<T, String>;
 
 pub struct Library {
     db: Mutex<Connection>,
+    bible_directory: PathBuf,
     picks: Mutex<Picks>,
 }
 
@@ -40,8 +44,8 @@ struct Picks {
     files: HashSet<PathBuf>,
 }
 
-#[derive(Deserialize)]
-struct BibleData {
+#[derive(Deserialize, Serialize)]
+pub struct BibleData {
     books: Vec<Book>,
     verses: Vec<(String, u32, u32, String)>,
 }
@@ -51,6 +55,14 @@ pub struct Book {
     id: String,
     name: String,
     chapters: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    abbreviation: Option<String>,
+    #[serde(
+        default,
+        rename = "alternateName",
+        skip_serializing_if = "Option::is_none"
+    )]
+    alternate_name: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -92,7 +104,7 @@ fn message(error: impl std::fmt::Display) -> String {
 impl Library {
     pub fn open(directory: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         fs::create_dir_all(directory)?;
-        let mut db = Connection::open(directory.join("lighthouse.sqlite3"))?;
+        let db = Connection::open(directory.join("lighthouse.sqlite3"))?;
         db.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS workspace (
@@ -105,32 +117,17 @@ impl Library {
                 mime TEXT NOT NULL,
                 data BLOB NOT NULL
             );
-            CREATE TABLE IF NOT EXISTS translations (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS books (
-                translation TEXT NOT NULL,
-                id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                chapters INTEGER NOT NULL,
-                position INTEGER NOT NULL,
-                PRIMARY KEY (translation, id)
-            );
-            CREATE TABLE IF NOT EXISTS verses (
-                translation TEXT NOT NULL,
-                book TEXT NOT NULL,
-                chapter INTEGER NOT NULL,
-                verse INTEGER NOT NULL,
-                text TEXT NOT NULL,
-                PRIMARY KEY (translation, book, chapter, verse)
-            );",
+            ",
         )?;
-        for (id, name, source) in BIBLES {
-            Self::seed_bible(&mut db, id, name, source)?;
+        let bible_directory = directory.join("bibles");
+        fs::create_dir_all(&bible_directory)?;
+        for (id, name, source_id, source) in BIBLES {
+            let mut bible = Connection::open(bible_directory.join(format!("{id}.sqlite3")))?;
+            Self::seed_bible(&mut bible, id, name, source_id, source)?;
         }
         Ok(Self {
             db: Mutex::new(db),
+            bible_directory,
             picks: Mutex::new(Picks::default()),
         })
     }
@@ -139,23 +136,32 @@ impl Library {
         db: &mut Connection,
         id: &str,
         name: &str,
+        source_id: &str,
         source: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let exists: bool = db.query_row(
+        db.pragma_update(None, "foreign_keys", "ON")?;
+        let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute_batch(BIBLE_SCHEMA)?;
+        let exists: bool = transaction.query_row(
             "SELECT EXISTS(SELECT 1 FROM translations WHERE id = ?1)",
             [id],
             |row| row.get(0),
         )?;
-        if exists {
-            return Ok(());
-        }
-        let data: BibleData = serde_json::from_str(source)?;
-        let transaction = db.transaction()?;
-        transaction.execute(
-            "INSERT INTO translations VALUES (?1, ?2)",
-            params![id, name],
-        )?;
-        {
+        if !exists {
+            let data: BibleData = serde_json::from_str(source)?;
+            transaction.execute(
+                "INSERT INTO translations VALUES (?1, ?2)",
+                params![id, name],
+            )?;
+            transaction.execute(
+                "INSERT INTO translation_sources VALUES (?1, 'Complete Bible', ?2, '', ?3, '', '', ?4)",
+                params![
+                    id,
+                    format!("https://ebible.org/find/show.php?id={source_id}"),
+                    format!("public/bible-{id}.json"),
+                    "Bundled from the public-domain eBible.org verse-per-line distribution.",
+                ],
+            )?;
             let mut add_book =
                 transaction.prepare("INSERT INTO books VALUES (?1, ?2, ?3, ?4, ?5)")?;
             for (position, book) in data.books.into_iter().enumerate() {
@@ -175,6 +181,21 @@ impl Library {
         self.db
             .lock()
             .map_err(|_| "The local database is unavailable.".into())
+    }
+
+    fn open_bible(&self, translation: &str) -> CommandResult<Connection> {
+        if translation.is_empty()
+            || !translation
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        {
+            return Err("Invalid Bible translation ID.".into());
+        }
+        Connection::open_with_flags(
+            self.bible_directory.join(format!("{translation}.sqlite3")),
+            OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .map_err(|error| format!("Could not open the Bible edition {translation}: {error}"))
     }
 
     fn picks(&self) -> CommandResult<MutexGuard<'_, Picks>> {
@@ -319,37 +340,95 @@ pub fn save_project(
 
 #[tauri::command]
 pub fn translations(library: State<'_, Library>) -> CommandResult<Vec<Translation>> {
-    let db = library.db()?;
-    let mut statement = db
-        .prepare("SELECT id, name FROM translations ORDER BY id")
-        .map_err(message)?;
-    let rows = statement
-        .query_map([], |row| {
-            Ok(Translation {
-                id: row.get(0)?,
-                name: row.get(1)?,
-            })
+    fn translation_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Translation> {
+        Ok(Translation {
+            id: row.get(0)?,
+            name: row.get(1)?,
         })
-        .map_err(message)?;
-    rows.collect::<Result<_, _>>().map_err(message)
+    }
+
+    let mut translations = Vec::new();
+    for entry in fs::read_dir(&library.bible_directory).map_err(message)? {
+        let path = entry.map_err(message)?.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("sqlite3") || !path.is_file() {
+            continue;
+        }
+        let Some(id) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        // An unreadable edition must not prevent the other editions from loading.
+        if let Ok(edition) = library.open_bible(id).and_then(|db| {
+            db.query_row(
+                "SELECT id, name FROM translations WHERE id = ?1",
+                [id],
+                translation_row,
+            )
+            .map_err(message)
+        }) {
+            translations.push(edition);
+        }
+    }
+    translations.sort_by(|first, second| {
+        let rank = |id: &str| !BIBLES.iter().any(|(bundled, _, _, _)| *bundled == id);
+        rank(&first.id)
+            .cmp(&rank(&second.id))
+            .then_with(|| first.id.cmp(&second.id))
+    });
+    Ok(translations)
 }
 
-#[tauri::command]
-pub fn books(library: State<'_, Library>, translation: String) -> CommandResult<Vec<Book>> {
-    let db = library.db()?;
-    let mut statement = db
-        .prepare("SELECT id, name, chapters FROM books WHERE translation = ?1 ORDER BY position")
-        .map_err(message)?;
+fn read_books(db: &Connection, translation: &str) -> CommandResult<Vec<Book>> {
+    let sql = "SELECT b.id, b.name, b.chapters, NULLIF(a.hungarian_abbreviation, ''),
+                      NULLIF(a.source_book_name, b.name)
+               FROM books b LEFT JOIN book_aliases a ON a.translation = b.translation AND a.book = b.id
+               WHERE b.translation = ?1 ORDER BY b.position";
+    let mut statement = db.prepare(sql).map_err(message)?;
     let rows = statement
         .query_map([translation], |row| {
             Ok(Book {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 chapters: row.get(2)?,
+                abbreviation: row.get(3)?,
+                alternate_name: row.get(4)?,
             })
         })
         .map_err(message)?;
     rows.collect::<Result<_, _>>().map_err(message)
+}
+
+fn verse_text(text: String) -> String {
+    if !text.contains('<') {
+        return text;
+    }
+
+    // The source places section headings inside some verse records.
+    let mut remaining = text.as_str();
+    let mut plain = String::with_capacity(text.len());
+    while let Some((before, after)) = remaining.split_once("<TS>") {
+        plain.push_str(before);
+        match after.split_once("<Ts>") {
+            Some((_, verse)) => remaining = verse,
+            None => {
+                remaining = after;
+                break;
+            }
+        }
+    }
+    plain.push_str(remaining);
+    plain
+        .replace("<CL>", "\n")
+        .replace("<CM>", "\n")
+        .replace("<FI>", "")
+        .replace("<Fi>", "")
+        .replace("<Ts>", "")
+        .trim()
+        .to_owned()
+}
+
+#[tauri::command]
+pub fn books(library: State<'_, Library>, translation: String) -> CommandResult<Vec<Book>> {
+    read_books(&library.open_bible(&translation)?, &translation)
 }
 
 #[tauri::command]
@@ -359,7 +438,7 @@ pub fn verses(
     book: String,
     chapter: u32,
 ) -> CommandResult<Vec<Verse>> {
-    let db = library.db()?;
+    let db = library.open_bible(&translation)?;
     let mut statement = db.prepare(
         "SELECT verse, text FROM verses WHERE translation = ?1 AND book = ?2 AND chapter = ?3 ORDER BY verse"
     ).map_err(message)?;
@@ -367,11 +446,39 @@ pub fn verses(
         .query_map(params![translation, book, chapter], |row| {
             Ok(Verse {
                 verse: row.get(0)?,
-                text: row.get(1)?,
+                text: verse_text(row.get(1)?),
             })
         })
         .map_err(message)?;
     rows.collect::<Result<_, _>>().map_err(message)
+}
+
+#[tauri::command]
+pub async fn bible_search_data(
+    library: State<'_, Library>,
+    translation: String,
+) -> CommandResult<BibleData> {
+    let db = library.open_bible(&translation)?;
+    let books = read_books(&db, &translation)?;
+    let mut statement = db
+        .prepare(
+            "SELECT v.book, v.chapter, v.verse, v.text
+             FROM verses v JOIN books b ON b.translation = v.translation AND b.id = v.book
+             WHERE v.translation = ?1 ORDER BY b.position, v.chapter, v.verse",
+        )
+        .map_err(message)?;
+    let rows = statement
+        .query_map([&translation], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                verse_text(row.get(3)?),
+            ))
+        })
+        .map_err(message)?;
+    let verses = rows.collect::<Result<_, _>>().map_err(message)?;
+    Ok(BibleData { books, verses })
 }
 
 fn path_string(path: &Path) -> CommandResult<String> {

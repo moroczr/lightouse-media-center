@@ -1,5 +1,5 @@
 import { useRef, useState, type KeyboardEvent } from 'react'
-import { ChevronRight, Folder, Pencil, Plus, RadioTower, Search } from 'lucide-react'
+import { ChevronRight, Folder, FolderPlus, Pencil, Plus, RadioTower, Search } from 'lucide-react'
 import { textSlideCues, type Group, type LibraryTextSlide } from '../shared/model'
 import { ItemIcon } from './CueList'
 
@@ -12,9 +12,10 @@ function playlistDestinations(group: Group, root = group.id, label = group.title
 }
 
 export function TextSlideLibrary({
-  items, playlists, parent, selectedId, initialFolder, saving, error, busy, onCreate, onEdit, onAdd, onLive,
+  items, libraries, playlists, parent, selectedId, initialFolder, saving, error, busy, onCreate, onCreateLibrary, onCreateOneOff, onEdit, onAdd, onLive,
 }: {
   items: LibraryTextSlide[]
+  libraries: string[]
   playlists: Group[]
   parent: string
   selectedId?: string
@@ -23,6 +24,8 @@ export function TextSlideLibrary({
   error: string
   busy: boolean
   onCreate: (folder: string) => void
+  onCreateLibrary: () => void
+  onCreateOneOff: () => void
   onEdit: (item: LibraryTextSlide) => void
   onAdd: (item: LibraryTextSlide, parent: string, root: string) => void
   onLive: (item: LibraryTextSlide) => void
@@ -35,12 +38,13 @@ export function TextSlideLibrary({
   const resultList = useRef<HTMLUListElement>(null)
   const search = query.trim().toLocaleLowerCase()
   const prefix = folder ? `${folder}/` : ''
-  const subfolders = search ? [] : [...new Set(items.flatMap(item => (
-    item.folder.startsWith(prefix) && item.folder.length > prefix.length
-      ? [item.folder.slice(prefix.length).split('/', 1)[0]] : []
+  const subfolders = search ? [] : [...new Set(libraries.flatMap(path => (
+    path.startsWith(prefix) && path.length > prefix.length
+      ? [path.slice(prefix.length).split('/', 1)[0]] : []
   )))].sort((a, b) => a.localeCompare(b))
   const shown = items.filter(item => search
-    ? `${item.folder}/${item.slide.title}`.toLocaleLowerCase().includes(search)
+    ? (item.folder === folder || item.folder.startsWith(prefix))
+      && `${item.folder}/${item.slide.title}`.toLocaleLowerCase().includes(search)
     : item.folder === folder).sort((a, b) => a.slide.title.localeCompare(b.slide.title) || a.folder.localeCompare(b.folder))
   const rows = [
     ...subfolders.map(name => ({ kind: 'folder', key: `folder:${prefix}${name}`, name, path: prefix + name } as const)),
@@ -101,33 +105,38 @@ export function TextSlideLibrary({
       <div className="text-library-toolbar">
         <label className="search-box">
           <Search size={17} aria-hidden="true" />
-          <input type="search" aria-label="Search saved text slides" placeholder="Search names and folders" value={query}
+          <input type="search" aria-label="Search saved text slides" placeholder={folder ? 'Search this library' : 'Search all libraries'} value={query}
             ref={element => {
               searchInput.current = element
               if (element) element.autofocus = true
             }} onChange={event => setQuery(event.target.value)} />
         </label>
-        <button type="button" className="button" onClick={() => onCreate(folder)}>
-          <Plus size={16} aria-hidden="true" /> New text slide
-        </button>
+        <button type="button" className="button" onClick={onCreateOneOff}>One-off text slide</button>
+        {libraries.includes(folder) ? (
+          <button type="button" className="button button-primary" onClick={() => onCreate(folder)}>
+            <Plus size={16} aria-hidden="true" /> New text slide
+          </button>
+        ) : (
+          <button type="button" className="button button-primary" onClick={onCreateLibrary}>
+            <FolderPlus size={16} aria-hidden="true" /> New library
+          </button>
+        )}
       </div>
 
-      {!search && (
-        <nav className="text-library-path" aria-label="Library folders">
-          <button type="button" className="button button-quiet" aria-current={!folder ? 'location' : undefined}
-            onClick={() => openFolder('')}>Library</button>
-          {crumbs.map((part, index) => {
-            const path = crumbs.slice(0, index + 1).join('/')
-            return (
-              <span key={path}>
-                <ChevronRight size={13} aria-hidden="true" />
-                <button type="button" className="button button-quiet" aria-current={path === folder ? 'location' : undefined}
-                  onClick={() => openFolder(path)}>{part}</button>
-              </span>
-            )
-          })}
-        </nav>
-      )}
+      <nav className="text-library-path" aria-label="Slide libraries">
+        <button type="button" className="button button-quiet" aria-current={!folder ? 'location' : undefined}
+          onClick={() => openFolder('')}>Library</button>
+        {crumbs.map((part, index) => {
+          const path = crumbs.slice(0, index + 1).join('/')
+          return (
+            <span key={path}>
+              <ChevronRight size={13} aria-hidden="true" />
+              <button type="button" className="button button-quiet" aria-current={path === folder ? 'location' : undefined}
+                onClick={() => openFolder(path)}>{part}</button>
+            </span>
+          )
+        })}
+      </nav>
 
       <div className="media-results" role="region" aria-label="Saved text slides" aria-busy={saving}>
         {rows.length ? (
@@ -150,7 +159,7 @@ export function TextSlideLibrary({
                     }}>
                     {row.kind === 'folder' ? <>
                       <Folder size={22} aria-hidden="true" />
-                      <span className="media-result-text"><strong>{row.name}</strong><span>Folder</span></span>
+                      <span className="media-result-text"><strong>{row.name}</strong><span>{libraries.includes(row.path) ? 'Library' : 'Folder'}</span></span>
                       <ChevronRight size={16} aria-hidden="true" />
                     </> : <>
                       <ItemIcon kind="text" />
@@ -163,7 +172,8 @@ export function TextSlideLibrary({
             })}
           </ul>
         ) : (
-          <p className="media-empty" role="status">{search ? 'No text slides match your search.' : 'No saved text slides here.'}</p>
+          <p className="media-empty" role="status">{search ? 'No text slides match your search.'
+            : libraries.length ? 'No saved text slides here.' : 'Create a library to save text slides.'}</p>
         )}
       </div>
       {saving && <p role="status">Saving text slide library…</p>}

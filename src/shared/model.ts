@@ -11,6 +11,8 @@ export interface Book {
   id: string
   name: string
   chapters: number
+  abbreviation?: string
+  alternateName?: string
 }
 
 export interface Translation {
@@ -71,6 +73,7 @@ export interface Project {
   playlists: Group[]
   sources: Source[]
   textLibrary: LibraryTextSlide[]
+  slideLibraries: string[]
   activeId: string
   displayId: string | null
 }
@@ -140,8 +143,9 @@ type SavedTextSlide = TextSlide & { caption?: string }
 type SavedGroup = Omit<Group, 'children'> & {
   children: (Exclude<Item, Group | TextSlide> | SavedTextSlide | LegacyTextSlide | SavedGroup)[]
 }
-export type SavedProject = Omit<Project, 'playlists' | 'textLibrary'> & {
+export type SavedProject = Omit<Project, 'playlists' | 'textLibrary' | 'slideLibraries'> & {
   playlists: SavedGroup[]
+  slideLibraries?: string[]
   textLibrary?: (Omit<LibraryTextSlide, 'slide'> & { slide: SavedTextSlide; name?: string })[]
 }
 
@@ -166,9 +170,25 @@ export function normalizeProject(project: SavedProject): Project {
       }),
     }
   }
+  const libraries = new Map<string, string>()
+  function registerLibrary(path: string) {
+    const key = path.toLocaleLowerCase()
+    const name = libraries.get(key) ?? path
+    libraries.set(key, name)
+    return name
+  }
+  for (const path of project.slideLibraries ?? []) {
+    const name = normalizeTextSlideFolder(path)
+    if (name) registerLibrary(name)
+  }
+  const textLibrary = (project.textLibrary ?? []).map(({ folder, slide }) => ({
+    folder: registerLibrary(normalizeTextSlideFolder(folder) || 'Unfiled'),
+    slide: normalizeTextSlide(slide),
+  }))
   return {
     ...project,
-    textLibrary: (project.textLibrary ?? []).map(({ folder, slide }) => ({ folder, slide: normalizeTextSlide(slide) })),
+    textLibrary,
+    slideLibraries: [...libraries.values()],
     playlists: project.playlists.map(migrateGroup),
   }
 }
@@ -261,6 +281,7 @@ export const starterProject: Project = {
   displayId: null,
   sources: [],
   textLibrary: [],
+  slideLibraries: [],
   playlists: [
     {
       id: 'sunday',

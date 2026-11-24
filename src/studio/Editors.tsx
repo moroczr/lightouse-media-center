@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { ArrowDown, ArrowLeft, ArrowUp, Plus, RadioTower, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowUp, Folder, Plus, RadioTower, Trash2, X } from 'lucide-react'
 import { kindNames, textCueTitle, type Item, type TextEntry, type TextSlide, type Theme } from '../shared/model'
 
 export function Dialog({ title, children, onClose, wide }: {
@@ -84,13 +84,12 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
   onLive?: (slide: TextSlide) => void
   library?: {
     folder: string
-    onSave: (slide: TextSlide, folder: string) => string | undefined
+    onSave: (slide: TextSlide) => string | undefined
     onBack: () => void
   }
 }) {
   const [id] = useState(() => existing?.id ?? crypto.randomUUID())
   const [caption, setCaption] = useState(existing?.captionFromFirstEntry ? '' : existing?.title ?? '')
-  const [folder, setFolder] = useState(library?.folder ?? '')
   const [libraryError, setLibraryError] = useState('')
   const [entries, setEntries] = useState<TextEntry[]>(() => existing?.entries ?? [{ id: crypto.randomUUID(), text: '' }])
   const [theme, setTheme] = useState<Theme>(existing?.theme ?? 'twilight')
@@ -109,7 +108,7 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
   const valid = !busy && slide.entries.length > 0 && slide.entries.every(entry => !!entry.text)
 
   function saveToLibrary() {
-    if (library && valid) setLibraryError(library.onSave(slide, folder) ?? '')
+    if (library && valid) setLibraryError(library.onSave(slide) ?? '')
   }
 
   function liveShortcut(event: KeyboardEvent<HTMLFormElement>) {
@@ -143,22 +142,18 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
       else if (!onSave) saveToLibrary()
     }}>
       {library && (
-        <button type="button" className="button button-quiet text-library-back" onClick={library.onBack}>
-          <ArrowLeft size={16} aria-hidden="true" /> Back to library
-        </button>
+        <div className="text-library-context">
+          <button type="button" className="button button-quiet" onClick={library.onBack}>
+            <ArrowLeft size={16} aria-hidden="true" /> Back to library
+          </button>
+          <span><Folder size={15} aria-hidden="true" /> {library.folder}</span>
+        </div>
       )}
       <label>
         Caption (optional)
         <input autoFocus value={caption} maxLength={100} placeholder="Uses the first text entry if blank"
           onChange={event => setCaption(event.target.value)} />
       </label>
-      {library && (
-        <label>
-          Library folder
-          <input value={folder} maxLength={180} placeholder="e.g. Worships"
-            onChange={event => { setFolder(event.target.value); setLibraryError('') }} />
-        </label>
-      )}
       {libraryError && <p className="media-warning" role="alert">{libraryError}</p>}
       <ol className="text-entries">
         {entries.map((entry, index) => {
@@ -193,9 +188,6 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
       <button type="button" className="button text-entry-add" onClick={addEntry}><Plus size={16} /> Add text entry</button>
       <ThemePicker value={theme} onChange={setTheme} />
       <div className="dialog-actions">
-        {library && onSave && <button type="button" className="button" disabled={!valid} onClick={saveToLibrary}>
-          Save to library
-        </button>}
         {onLive && <button type="button" className="button" disabled={!valid} aria-keyshortcuts="Control+Enter" onClick={() => onLive(slide)}>
           <RadioTower size={15} aria-hidden="true" /> Send to Kiosk <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>
         </button>}
@@ -210,14 +202,24 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
 
 export function NameEditor({ existing, onSave, action, label }: {
   existing?: Item;
-  onSave: (name: string) => void;
+  onSave: (name: string) => string | void;
   action: string;
   label: string;
 }) {
   const [value, setValue] = useState(existing?.title ?? '')
+  const [error, setError] = useState('')
   return (
-    <form className="editor" onSubmit={event => { event.preventDefault(); if (value.trim()) onSave(value.trim()) }}>
-      <label>{label}<input autoFocus value={value} maxLength={100} onChange={event => setValue(event.target.value)} /></label>
+    <form className="editor" onSubmit={event => {
+      event.preventDefault()
+      const name = value.trim()
+      if (name) setError(onSave(name) || '')
+    }}>
+      <label>
+        {label}
+        <input value={value} maxLength={100} ref={element => { if (element) element.autofocus = true }}
+          onChange={event => { setValue(event.target.value); setError('') }} />
+      </label>
+      {error && <p className="media-warning" role="alert">{error}</p>}
       <div className="dialog-actions"><button className="button button-primary" disabled={!value.trim()}>{action}</button></div>
     </form>
   )

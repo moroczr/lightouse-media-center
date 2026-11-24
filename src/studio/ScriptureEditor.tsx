@@ -11,7 +11,12 @@ import { EditorActions, ThemePicker } from './Editors'
 
 const segmentLabels = { book: 'Bible books', chapter: 'Chapters', verse: 'Verses' }
 
-type Draft = { text: string; auto: boolean; complete?: boolean }
+type Draft = {
+  text: string
+  auto: boolean
+  complete?: boolean
+  location?: { book: string; suffix: string }
+}
 type Navigation = { search: PassageVerse; start: PassageVerse; selected: PassageVerse; visible: PassageVerse[] }
 type VerseWindow = Awaited<ReturnType<typeof readVerseWindow>>
 type LoadResult<T> = { key: string; values: T[] } | { key: string; error: string }
@@ -44,7 +49,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
   const activeOption = useRef<HTMLLIElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const moveCaret = useRef(false)
-  const remainingLetters = useRef('')
+  const remainingLetters = useRef<string[]>([])
   const verseResults = useRef<HTMLUListElement>(null)
   const selectedRow = useRef<HTMLButtonElement>(null)
   const focusSelectedRow = useRef(false)
@@ -52,7 +57,11 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
   const books = bookList?.key === translation ? bookList : undefined
   const bookValues = books && 'values' in books ? books.values : undefined
   const original = bookValues?.find(book => book.id === initial?.book)
-  const text = draft?.text ?? (initial ? `${original?.name ?? initial.book} ${initial.chapter}:${initial.verse}` : '')
+  const location = draft?.location
+  const translatedBook = location && bookValues?.find(book => book.id === location.book)
+  const text = translatedBook && location ? `${translatedBook.name} ${location.suffix}`
+    : draft?.text ?? (initial ? `${original?.name ?? initial.book} ${initial.chapter}:${initial.verse}` : '')
+  const referenceExample = bookValues?.find(book => book.id === '1PE')?.name ?? '1 Peter'
   const reference = useMemo(
     () => lookupReference(text, bookValues ?? []),
     [text, bookValues],
@@ -150,7 +159,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
   }, [start, bookValues, readChapter])
 
   const completeSegment = useCallback((option: ReferenceSuggestion) => {
-    if (segment === 'book') remainingLetters.current = option.remainingLetters ?? ''
+    if (segment === 'book') remainingLetters.current = option.remainingLetters ?? []
     moveCaret.current = true
     setDraft({ text: option.value, auto: true, complete: segment === 'verse' })
     setDismissed(false)
@@ -188,7 +197,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
   }, [selected, currentWindow])
 
   function removeSegment(offset: number) {
-    remainingLetters.current = ''
+    remainingLetters.current = []
     moveCaret.current = true
     setDraft({ text: deleteReferenceSegment(text, offset), auto: false })
     setDismissed(false)
@@ -207,8 +216,13 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
       const added = value.slice(text.length)
       const letters = normalizeBook(added)
       // Keep accepting a book name or abbreviation after autocomplete has advanced to the chapter.
-      if (letters && remainingLetters.current.startsWith(letters)) {
-        remainingLetters.current = remainingLetters.current.slice(letters.length)
+      if (letters) {
+        const matching = remainingLetters.current.filter(ending => ending.startsWith(letters))
+        if (matching.length) {
+          remainingLetters.current = matching.map(ending => ending.slice(letters.length)).filter(Boolean)
+          return
+        }
+      } else if (added === '.' && remainingLetters.current.length) {
         return
       }
       // Accept a separator that the typist enters immediately after autocomplete added it.
@@ -219,7 +233,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
         moveCaret.current = true
       }
     }
-    remainingLetters.current = ''
+    remainingLetters.current = []
     setDraft({ text: value, auto: !change.isComposing })
     setDismissed(false)
     setActiveIndex(-1)
@@ -296,6 +310,17 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
     }
   }
 
+  function changeTranslation(next: string) {
+    if (draft && book && segment !== 'book') {
+      const suffix = verseText === undefined ? chapterText : `${chapterText}:${verseText}`
+      setDraft({ ...draft, location: { book: book.id, suffix } })
+    }
+    remainingLetters.current = []
+    setTranslation(next)
+    setActiveIndex(-1)
+    setDismissed(false)
+  }
+
   function changeMode(next: boolean) {
     setByText(next)
     setActiveIndex(-1)
@@ -363,7 +388,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
                 if (element) element.autofocus = true
               }}
               autoComplete="off" spellCheck={false} maxLength={byText ? 200 : 80}
-              value={byText ? query : text} placeholder={byText ? 'e.g. love your enemies' : 'e.g. 1 Pet 2:24'}
+              value={byText ? query : text} placeholder={byText ? 'e.g. love your enemies' : `e.g. ${referenceExample} 2:24`}
               onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); setActiveIndex(-1) }}
               onChange={byText ? event => setQuery(event.target.value) : changeReference}
               onKeyDown={byText ? textKeys : referenceKeys} />
@@ -384,7 +409,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
           Translation
           <span className="scripture-translation">
             <select value={translation} disabled={!translations.length}
-              onChange={event => { setTranslation(event.target.value); setActiveIndex(-1); setDismissed(false) }}>
+              onChange={event => changeTranslation(event.target.value)}>
               {!translations.some(option => option.id === translation) && (
                 <option value={translation}>{translations.length || translationError ? translation : 'Loading translations…'}</option>
               )}

@@ -11,11 +11,24 @@ const abbreviations: Readonly<Record<string, string>> = {
   JAM: 'jas',
 }
 
+const editionLabels: Readonly<Record<string, string>> = {
+  H_Karoli_snc: 'Károli 1590',
+  H_rev_Karoli_KSZE: 'Károli KSZE 2011',
+}
+
 // The book must contain a letter so the leading number in "1 Peter" stays with the book.
-const referencePattern = /^([1-3]?\s*\p{L}[\p{L}\s.'’-]*?)\s*(\d+)(?:\s*:\s*(.*))?$/u
+const referencePattern = /^((?:[1-5]\.?)?\s*\p{L}[\p{L}\p{M}\d\s.'’-]*?)\s*(\d+)(?:\s*:\s*(.*))?$/u
 
 export function normalizeBook(value: string) {
-  return value.toLowerCase().replace(/[.\s]/g, '')
+  return value.toLowerCase().normalize('NFD').replace(/[.\s]|\p{M}/gu, '')
+}
+
+function bookNames(book: Book) {
+  return [book.name, book.abbreviation, book.alternateName].flatMap(name => name ? [normalizeBook(name)] : [])
+}
+
+function isExactBook(book: Book, input: string) {
+  return book.id.toLowerCase() === input || abbreviations[book.id] === input || bookNames(book).includes(input)
 }
 
 function numericPrefix(value: string) {
@@ -23,16 +36,19 @@ function numericPrefix(value: string) {
 }
 
 export function lookupReference(input: string, books: readonly Book[]) {
-  const text = input.trim()
-  const match = referencePattern.exec(text)
-  const bookText = normalizeBook(match?.[1] ?? text)
+  const text = input.trim().normalize('NFC')
+  let match = referencePattern.exec(text)
+  const wholeName = normalizeBook(text)
+  // A trailing number can still be part of a book name, as in "Mózes 1. könyve".
+  if (match && match[3] === undefined && books.some(book => normalizeBook(book.name).startsWith(wholeName))) {
+    match = null
+  }
+  const bookText = match ? normalizeBook(match[1]) : wholeName
   const candidates = bookText ? books.filter(book => (
-    normalizeBook(book.name).startsWith(bookText)
-    || book.id.toLowerCase() === bookText
-    || abbreviations[book.id] === bookText
+    bookNames(book).some(name => name.startsWith(bookText)) || isExactBook(book, bookText)
   )) : []
   const exact = candidates.find(book => normalizeBook(book.name) === bookText)
-    ?? candidates.find(book => book.id.toLowerCase() === bookText || abbreviations[book.id] === bookText)
+    ?? candidates.find(book => isExactBook(book, bookText))
   const book = exact ?? (candidates.length === 1 ? candidates[0] : undefined)
   const chapterText = match?.[2] ?? ''
   const verseText = match?.[3]
@@ -49,7 +65,7 @@ export interface ReferenceSuggestion {
   label: string
   value: string
   exact?: boolean
-  remainingLetters?: string
+  remainingLetters?: string[]
 }
 
 export function referenceSuggestions(reference: ReturnType<typeof lookupReference>, verses: readonly Verse[]): ReferenceSuggestion[] {
@@ -57,13 +73,15 @@ export function referenceSuggestions(reference: ReturnType<typeof lookupReferenc
   const verseSuffix = verseText === undefined ? '' : `:${verseText}`
   if (segment === 'book' || !book) {
     return candidates.map(option => {
-      const name = normalizeBook(option.name)
+      const remainingLetters = bookNames(option)
+        .filter(name => name.startsWith(bookText) && name.length > bookText.length)
+        .map(name => name.slice(bookText.length))
       return {
         id: option.id,
         label: option.name,
         value: `${option.name} ${chapterText}${verseSuffix}`,
-        exact: name === bookText || option.id.toLowerCase() === bookText || abbreviations[option.id] === bookText,
-        remainingLetters: !chapterText && name.startsWith(bookText) ? name.slice(bookText.length) : undefined,
+        exact: isExactBook(option, bookText),
+        remainingLetters: chapterText ? undefined : remainingLetters,
       }
     })
   }
@@ -94,12 +112,13 @@ export function deleteReferenceSegment(input: string, offset: number) {
 type ChapterPosition = { book: Book; chapter: number }
 export type PassageVerse = ChapterPosition & Verse
 
-export function verseLabel({ book, chapter, verse }: PassageVerse) {
+export function verseLabel({ book, chapter, verse }: ChapterPosition & Pick<Verse, 'verse'>) {
   return `${book.name} ${chapter}:${verse}`
 }
 
 export function formatScriptureCue(cue: ScriptureCue, text: string): AudienceScriptureCue {
-  return { ...cue, text, caption: `${cue.title} · ${cue.reference.translation}` }
+  const edition = editionLabels[cue.reference.translation] ?? cue.reference.translation
+  return { ...cue, text, caption: `${cue.title} · ${edition}` }
 }
 
 function adjacentChapter(books: readonly Book[], position: ChapterPosition, direction: -1 | 1): ChapterPosition | undefined {

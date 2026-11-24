@@ -1,10 +1,10 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import {
-  type AudienceCue, type Book, type Cue, type Display, type KioskBackground, type MediaFile, type PlaybackAction, type Project,
+  type AudienceCue, type Book, type Cue, type Display, type Group, type KioskBackground, type MediaFile, type PlaybackAction, type Project,
   type Reference, type SavedProject, type Source, type Stage, type Translation, type Verse, emptyStage, isMedia, normalizeProject,
 } from './model'
-import { formatScriptureCue, readAdjacentVerses } from './scripture'
+import { formatScriptureCue, readAdjacentVerses, verseLabel } from './scripture'
 import { createVerseSearch, type BibleVerseRow } from './verseSearch'
 
 export const desktop = isTauri()
@@ -42,7 +42,8 @@ function loadBible(translation: string) {
 function loadVerseSearch(translation: string) {
   let request = verseSearches.get(translation)
   if (!request) {
-    request = loadBible(translation).then(({ books, verses }) => createVerseSearch(books, verses))
+    const data = desktop ? invoke<BibleData>('bible_search_data', { translation }) : loadBible(translation)
+    request = data.then(({ books, verses }) => createVerseSearch(books, verses))
     verseSearches.set(translation, request)
     void request.catch(() => verseSearches.delete(translation))
   }
@@ -74,7 +75,27 @@ export async function loadProject(): Promise<Project | null> {
   const saved: SavedProject | null = desktop
     ? await invoke('load_project')
     : JSON.parse(localStorage.getItem(projectKey) ?? 'null')
-  return saved ? normalizeProject(saved) : null
+  if (!saved) return null
+  const project = normalizeProject(saved)
+  if (!desktop) return project
+
+  const booksByTranslation = new Map<string, Promise<Book[]>>()
+  async function updateScriptureTitles(group: Group): Promise<Group> {
+    const children = await Promise.all(group.children.map(async item => {
+      if (item.kind === 'playlist') return updateScriptureTitles(item)
+      if (item.kind !== 'scripture') return item
+      const { translation, book, chapter, verse } = item.reference
+      let request = booksByTranslation.get(translation)
+      if (!request) {
+        request = bible.books(translation).catch(() => [])
+        booksByTranslation.set(translation, request)
+      }
+      const match = (await request).find(entry => entry.id === book)
+      return match ? { ...item, title: verseLabel({ book: match, chapter, verse }) } : item
+    }))
+    return { ...group, children }
+  }
+  return { ...project, playlists: await Promise.all(project.playlists.map(updateScriptureTitles)) }
 }
 
 export function saveProject(project: Project): Promise<void> {

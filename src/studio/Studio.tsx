@@ -27,8 +27,9 @@ type Editor =
   | { kind: 'kiosk-background' }
   | { kind: 'choose'; parent: string }
   | { kind: 'text-library'; parent: string; selectedId?: string; folder?: string }
-  | { kind: 'text-library-edit'; parent: string; item: LibraryTextSlide }
-  | { kind: 'text'; parent: string; existing?: TextSlide; folder?: string }
+  | { kind: 'new-slide-library'; parent: string }
+  | { kind: 'library-text'; parent: string; folder: string; existing?: TextSlide }
+  | { kind: 'text'; parent: string; existing?: TextSlide }
   | { kind: 'scripture'; parent: string; existing?: ScriptureCue }
   | { kind: 'playlist'; parent: string | null }
   | { kind: 'media'; parent: string; filter?: 'video' | 'audio' }
@@ -69,6 +70,7 @@ export default function Studio() {
   const [loaded, setLoaded] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [persistedTextLibrary, setPersistedTextLibrary] = useState<LibraryTextSlide[]>()
+  const [persistedSlideLibraries, setPersistedSlideLibraries] = useState<string[]>()
   const [cueId, setCueId] = useState<string | null>(desktop ? welcomePreview.id : 'opening-scripture')
   const [displayList, setDisplayList] = useState<Display[]>([])
   const [kiosk, setKiosk] = useState(false)
@@ -125,6 +127,7 @@ export default function Studio() {
     if (!loaded) return
     saves.current = saves.current.then(() => saveProject(project)).then(() => {
       setPersistedTextLibrary(project.textLibrary)
+      setPersistedSlideLibraries(project.slideLibraries)
       setSaveError('')
     }).catch(reason => setSaveError(`Could not save changes: ${errorText(reason)}`))
   }, [project, loaded])
@@ -359,17 +362,23 @@ export default function Studio() {
     setEditor(null)
   }
 
-  function saveLibraryTextSlide(parent: string, slide: TextSlide, path: string) {
+  function createSlideLibrary(parent: string, name: string) {
     if (!loaded) return saveError || 'Wait for the workspace to finish loading.'
-    const normalized = normalizeTextSlideFolder(path)
-    setProject(current => {
-      const folder = current.textLibrary.find(item => item.folder.toLocaleLowerCase() === normalized.toLocaleLowerCase())?.folder
-        ?? normalized
-      return {
-        ...current,
-        textLibrary: [...current.textLibrary.filter(item => item.slide.id !== slide.id), { folder, slide }],
-      }
-    })
+    const folder = normalizeTextSlideFolder(name)
+    if (!folder) return 'Enter a library name.'
+    if (project.slideLibraries.some(path => path.toLocaleLowerCase() === folder.toLocaleLowerCase())) {
+      return 'A slide library with this name already exists.'
+    }
+    setProject(current => ({ ...current, slideLibraries: [...current.slideLibraries, folder] }))
+    setEditor({ kind: 'text-library', parent, folder })
+  }
+
+  function saveLibraryTextSlide(parent: string, slide: TextSlide, folder: string) {
+    if (!project.slideLibraries.includes(folder)) return 'This slide library is unavailable.'
+    setProject(current => ({
+      ...current,
+      textLibrary: [...current.textLibrary.filter(item => item.slide.id !== slide.id), { folder, slide }],
+    }))
     setEditor({ kind: 'text-library', parent, selectedId: slide.id })
   }
 
@@ -462,9 +471,10 @@ export default function Studio() {
 
   const title = editor?.kind === 'playlist' ? (editor.parent ? 'New nested playlist' : 'New playlist')
     : editor?.kind === 'rename' ? `Rename ${editor.existing.kind === 'playlist' ? 'playlist' : 'cue'}`
-    : editor?.kind === 'text' ? (editor.existing ? 'Edit text slide' : 'New text slide')
+    : editor?.kind === 'text' ? (editor.existing ? 'Edit text slide' : 'New one-off text slide')
     : editor?.kind === 'text-library' ? 'Text slide library'
-    : editor?.kind === 'text-library-edit' ? 'Edit saved text slide'
+    : editor?.kind === 'new-slide-library' ? 'New slide library'
+    : editor?.kind === 'library-text' ? (editor.existing ? 'Edit saved text slide' : 'New text slide')
     : editor?.kind === 'scripture' ? (editor.existing ? 'Edit scripture cue' : 'Bible lookup')
     : editor?.kind === 'media' ? 'Add Media'
     : editor?.kind === 'kiosk-background' ? 'Kiosk background'
@@ -512,7 +522,7 @@ export default function Studio() {
       </header>
 
       <div className="workspace">
-        <aside id="studio-sidebar" className="sidebar" aria-label="Playlists and sources" hidden={!sidebarOpen}>
+        <aside id="studio-sidebar" className="sidebar" aria-label="Playlists, sources, and slides" hidden={!sidebarOpen}>
           <div className="sidebar-content">
             <section className="sidebar-section">
               <div className="sidebar-heading"><h2>Playlists</h2><button className="icon-button" title="New playlist" aria-label="New playlist" onClick={() => setEditor({ kind: 'playlist', parent: null })}><Plus size={17} /></button></div>
@@ -532,7 +542,7 @@ export default function Studio() {
                 </button>
               ))}
             </section>
-            <section className="sidebar-section">
+            <section className="sidebar-section sidebar-section--media-sources">
               <div className="sidebar-heading"><h2>Media sources</h2><button className="icon-button" title="Add source folder" aria-label="Add source folder" onClick={addSourceFromSidebar}><Plus size={17} /></button></div>
               {project.sources.map(source => (
                 <div className="source-row" key={source.id}>
@@ -543,6 +553,24 @@ export default function Studio() {
                 </div>
               ))}
               {!project.sources.length && <button className="add-folder" onClick={addSourceFromSidebar}><FolderPlus size={16} /> Add a folder</button>}
+            </section>
+            <section className="sidebar-section sidebar-section--slides" aria-labelledby="slide-libraries-heading">
+              <div className="sidebar-heading">
+                <h2 id="slide-libraries-heading">Slides</h2>
+                <button type="button" className="icon-button" title="New slide library" aria-label="New slide library"
+                  onClick={() => setEditor({ kind: 'new-slide-library', parent: active.id })}><Plus size={17} /></button>
+              </div>
+              {[...project.slideLibraries].sort((a, b) => a.localeCompare(b)).map(folder => (
+                <button type="button" key={folder} className="sidebar-item" title={folder}
+                  onClick={() => setEditor({ kind: 'text-library', parent: active.id, folder })}>
+                  <FolderOpen size={17} aria-hidden="true" /><span>{folder}</span>
+                </button>
+              ))}
+              {!project.slideLibraries.length && (
+                <button type="button" className="add-folder" onClick={() => setEditor({ kind: 'new-slide-library', parent: active.id })}>
+                  <FolderPlus size={16} aria-hidden="true" /> New library
+                </button>
+              )}
             </section>
           </div>
           <div className="sidebar-foot">
@@ -608,29 +636,30 @@ export default function Studio() {
         {editor.kind === 'playlist' && <NameEditor label="Playlist name" action="Create playlist" onSave={name => addPlaylist(name, editor.parent)} />}
         {editor.kind === 'rename' && <NameEditor label="Name" action="Save changes" existing={editor.existing} onSave={name => rename(editor.existing, editor.parent, name)} />}
         {editor.kind === 'text-library' && (
-          <TextSlideLibrary items={project.textLibrary} playlists={project.playlists} parent={editor.parent}
+          <TextSlideLibrary items={project.textLibrary} libraries={project.slideLibraries} playlists={project.playlists} parent={editor.parent}
             selectedId={editor.selectedId} initialFolder={editor.folder} busy={transmitting}
-            saving={loaded && !saveError && persistedTextLibrary !== project.textLibrary} error={saveError}
-            onCreate={folder => setEditor({ kind: 'text', parent: editor.parent, folder })}
-            onEdit={item => setEditor({ kind: 'text-library-edit', parent: editor.parent, item })}
+            saving={loaded && !saveError && (persistedTextLibrary !== project.textLibrary || persistedSlideLibraries !== project.slideLibraries)}
+            error={saveError}
+            onCreateLibrary={() => setEditor({ kind: 'new-slide-library', parent: editor.parent })}
+            onCreateOneOff={() => setEditor({ kind: 'text', parent: editor.parent })}
+            onCreate={folder => setEditor({ kind: 'library-text', parent: editor.parent, folder })}
+            onEdit={item => setEditor({ kind: 'library-text', parent: editor.parent, folder: item.folder, existing: item.slide })}
             onAdd={(item, parent, root) => addItem(parent, copyLibraryTextSlide(item), root)}
             onLive={item => sendTextSlide(copyLibraryTextSlide(item))} />
+        )}
+        {editor.kind === 'new-slide-library' && (
+          <NameEditor label="Library name" action="Create library" onSave={name => createSlideLibrary(editor.parent, name)} />
         )}
         {editor.kind === 'text' && (
           <TextEditor existing={editor.existing} busy={transmitting}
             onSave={slide => saveItem(editor.parent, slide, editor.existing)}
-            onLive={editor.existing ? undefined : sendTextSlide}
-            library={editor.existing ? undefined : {
-              folder: editor.folder ?? '',
-              onBack: () => setEditor({ kind: 'text-library', parent: editor.parent, folder: editor.folder }),
-              onSave: (slide, folder) => saveLibraryTextSlide(editor.parent, slide, folder),
-            }} />
+            onLive={editor.existing ? undefined : sendTextSlide} />
         )}
-        {editor.kind === 'text-library-edit' && (
-          <TextEditor existing={editor.item.slide} library={{
-            folder: editor.item.folder,
-            onBack: () => setEditor({ kind: 'text-library', parent: editor.parent, selectedId: editor.item.slide.id }),
-            onSave: (slide, folder) => saveLibraryTextSlide(editor.parent, slide, folder),
+        {editor.kind === 'library-text' && (
+          <TextEditor existing={editor.existing} library={{
+            folder: editor.folder,
+            onBack: () => setEditor({ kind: 'text-library', parent: editor.parent, folder: editor.folder, selectedId: editor.existing?.id }),
+            onSave: slide => saveLibraryTextSlide(editor.parent, slide, editor.folder),
           }} />
         )}
         {editor.kind === 'scripture' && <ScriptureEditor existing={editor.existing} busy={transmitting} onSave={cue => saveItem(editor.parent, cue, editor.existing)} onLive={cue => void send(cue, false)} />}
