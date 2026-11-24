@@ -53,16 +53,25 @@ export function ThemePicker({ value, onChange }: { value: Theme; onChange: (them
   )
 }
 
-export function EditorActions({ editing, valid, onLive }: { editing?: boolean; valid: boolean; onLive?: () => void }) {
+export function EditorActions({ editing, valid, onLive, showShortcuts }: {
+  editing?: boolean
+  valid: boolean
+  onLive?: () => void
+  showShortcuts?: boolean
+}) {
   return (
     <div className="dialog-actions">
       {onLive && (
-        <button type="button" className="button" disabled={!valid} onClick={onLive}>
+        <button type="button" className="button" disabled={!valid} onClick={onLive}
+          aria-keyshortcuts={showShortcuts ? 'Control+Enter' : undefined}>
           <RadioTower size={15} /> Send to Kiosk
+          {showShortcuts && <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>}
         </button>
       )}
-      <button className="button button-primary" disabled={!valid} type="submit">
+      <button className="button button-primary" disabled={!valid} type="submit"
+        aria-keyshortcuts={showShortcuts ? 'Enter' : undefined}>
         {editing ? 'Save changes' : 'Add to playlist'}
+        {showShortcuts && <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>}
       </button>
     </div>
   )

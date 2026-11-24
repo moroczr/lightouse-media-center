@@ -233,12 +233,14 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
       const end = event.currentTarget.selectionEnd ?? start
       const offset = start === end && (event.key === 'Backspace' || start === text.length) ? start - 1 : start
       removeSegment(offset)
-    } else if (event.key === 'Enter') {
-      event.preventDefault()
-      const option = activeSuggestion ?? (suggestionsOpen
+    } else if (event.key === 'Enter' && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
+      const option = activeSuggestion ?? (!selected && suggestionsOpen
         ? options.find(candidate => candidate.exact) ?? (options.length === 1 ? options[0] : undefined)
         : undefined)
-      if (option) completeSegment(option)
+      if (option) {
+        event.preventDefault()
+        if (!event.repeat) completeSegment(option)
+      }
     } else if (event.key === 'Escape' && suggestionsOpen) {
       event.preventDefault()
       event.stopPropagation()
@@ -288,10 +290,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
 
   function textKeys(event: KeyboardEvent<HTMLInputElement>) {
     if (event.nativeEvent.isComposing) return
-    if (event.key === 'Enter') {
-      event.preventDefault()
-      selectedRow.current?.focus()
-    } else if (selected && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+    if (selected && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
       event.preventDefault()
       moveVerse(event.key === 'ArrowUp' ? -1 : 1)
     }
@@ -304,12 +303,23 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
     inputRef.current?.focus()
   }
 
-  function makeCue(): ScriptureCue | undefined {
+  function submitCue(action: (cue: ScriptureCue) => void) {
     if (busy || !selected) return
-    return {
+    action({
       id: existing?.id ?? crypto.randomUUID(), title, kind: 'scripture', theme,
       reference: { translation, book: selected.book.id, chapter: selected.chapter, verse: selected.verse },
-    }
+    })
+  }
+
+  function actionKeys(event: KeyboardEvent<HTMLFormElement>) {
+    if (event.key !== 'Enter' || event.defaultPrevented || event.nativeEvent.isComposing
+      || event.altKey || event.metaKey || event.shiftKey) return
+    const target = event.target
+    const onVerse = target === inputRef.current || (target instanceof HTMLElement && target.closest('.verse-result'))
+    if (!onVerse && !event.ctrlKey) return
+    event.preventDefault()
+    if (event.repeat || (event.ctrlKey && existing)) return
+    submitCue(event.ctrlKey ? onLive : onSave)
   }
 
   let status = 'Type a book name or abbreviation.'
@@ -329,10 +339,9 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
   }
 
   return (
-    <form className="editor" onSubmit={event => {
+    <form className="editor" onKeyDown={actionKeys} onSubmit={event => {
       event.preventDefault()
-      const cue = makeCue()
-      if (cue) onSave(cue)
+      submitCue(onSave)
     }}>
       <div className="scripture-toolbar">
         <div className="scripture-reference">
@@ -407,7 +416,9 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
               const label = verseLabel(verse)
               return <li key={label}>
                 <button type="button" className="verse-result" aria-pressed={label === title}
-                  ref={label === title ? selectedRow : undefined} onClick={event => {
+                  ref={label === title ? selectedRow : undefined}
+                  onFocus={() => { if (label !== title) selectVerse(verse) }}
+                  onClick={event => {
                     event.currentTarget.focus({ preventScroll: true })
                     selectVerse(verse)
                   }}>
@@ -424,10 +435,8 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
         </div>
       )}
       <ThemePicker value={theme} onChange={setTheme} />
-      <EditorActions editing={!!existing} valid={!!selected && !busy} onLive={existing ? undefined : () => {
-        const cue = makeCue()
-        if (cue) onLive(cue)
-      }} />
+      <EditorActions editing={!!existing} valid={!!selected && !busy} showShortcuts
+        onLive={existing ? undefined : () => submitCue(onLive)} />
     </form>
   )
 }

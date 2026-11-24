@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Check, CircleAlert, FolderOpen, FolderPlus, LayoutGrid, List, Plus, RadioTower, Search } from 'lucide-react'
 import { desktop, listMedia, pickMedia } from '../shared/bridge'
 import { type MediaFile, type Source } from '../shared/model'
@@ -39,6 +39,7 @@ export function MediaBrowser({ sources, initialFilter = 'all', view, onViewChang
   const [openedFile, setOpenedFile] = useState<MediaFile>()
   const [picking, setPicking] = useState(false)
   const [pickerError, setPickerError] = useState('')
+  const resultList = useRef<HTMLUListElement>(null)
   const [catalog, setCatalog] = useState<{ sources: Source[]; items: CatalogItem[]; unavailable: string[] }>()
 
   useEffect(() => {
@@ -76,7 +77,51 @@ export function MediaBrowser({ sources, initialFilter = 'all', view, onViewChang
       && (file.name.toLocaleLowerCase().includes(search) || file.location.toLocaleLowerCase().includes(search))
     ))
   }, [current, filter, openedFile, query])
-  const selected = shown.find(file => file.path === selectedPath)
+  const selectedIndex = shown.findIndex(file => file.path === selectedPath)
+  const selected = shown[selectedIndex]
+  const canAct = !!selected && !busy && !picking
+
+  function act(action: (file: MediaFile) => void) {
+    if (canAct) action(selected)
+  }
+
+  function navigate(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.defaultPrevented || event.nativeEvent.isComposing || event.altKey || event.metaKey || event.shiftKey) return
+    const list = resultList.current
+    const target = event.target
+    const inResults = target instanceof Node && !!list?.contains(target)
+
+    if (event.key === 'Enter' && (inResults || target instanceof HTMLInputElement || event.ctrlKey)) {
+      if (!selected) return
+      event.preventDefault()
+      if (!event.repeat) act(event.ctrlKey ? onLive : onSave)
+      return
+    }
+
+    if (event.ctrlKey || busy || picking || !list || !shown.length) return
+    const { key } = event
+    const vertical = key === 'ArrowUp' || key === 'ArrowDown'
+    const horizontal = key === 'ArrowLeft' || key === 'ArrowRight'
+    if (!vertical && !(inResults && view === 'tile' && horizontal)) return
+    event.preventDefault()
+
+    const last = shown.length - 1
+    let index = selectedIndex
+    if (index < 0) {
+      index = key === 'ArrowUp' ? last : 0
+    } else if (inResults) {
+      const columns = view === 'tile' ? getComputedStyle(list).gridTemplateColumns.split(/\s+/).length : 1
+      const column = index % columns
+      if (key === 'ArrowUp' && index >= columns) index -= columns
+      if (key === 'ArrowDown' && index - column + columns <= last) index = Math.min(index + columns, last)
+      if (key === 'ArrowLeft' && column > 0) index--
+      if (key === 'ArrowRight' && column + 1 < columns && index < last) index++
+    }
+
+    const button = list.children[index]?.querySelector('button')
+    button?.focus({ preventScroll: true })
+    button?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }
 
   async function pick(action: 'file' | 'folder') {
     setPickerError('')
@@ -100,11 +145,12 @@ export function MediaBrowser({ sources, initialFilter = 'all', view, onViewChang
   }
 
   return (
-    <div className="editor media-browser">
+    <div className="editor media-browser" onKeyDown={navigate}>
       <div className="media-toolbar">
         <label className="search-box">
           <Search size={17} aria-hidden="true" />
-          <input type="search" autoFocus aria-label="Search media" value={query} placeholder="Search files and folders"
+          <input type="search" ref={input => { if (input) input.autofocus = true }}
+            aria-label="Search media" value={query} placeholder="Search files and folders"
             onChange={event => setQuery(event.target.value)} />
         </label>
         <div className="media-tools">
@@ -135,11 +181,16 @@ export function MediaBrowser({ sources, initialFilter = 'all', view, onViewChang
 
       <div className="media-results" role="region" aria-label="Media results" aria-busy={loading}>
         {shown.length ? (
-          <ul className={`media-entries media-entries--${view}`}>
-            {shown.map(file => (
+          <ul ref={resultList} className={`media-entries media-entries--${view}`}>
+            {shown.map((file, index) => (
               <li key={file.path}>
-                <button className="media-result" aria-pressed={selectedPath === file.path}
-                  title={file.path} onClick={() => setSelectedPath(file.path)}>
+                <button type="button" className="media-result" aria-pressed={selectedIndex === index}
+                  tabIndex={index === Math.max(0, selectedIndex) ? 0 : -1}
+                  title={file.path} onFocus={() => setSelectedPath(file.path)}
+                  onClick={event => {
+                    event.currentTarget.focus({ preventScroll: true })
+                    setSelectedPath(file.path)
+                  }}>
                   <ItemIcon kind={file.kind} size={view === 'tile' ? 28 : 16} />
                   <span className="media-result-text">
                     <strong>{file.name}</strong>
@@ -164,8 +215,12 @@ export function MediaBrowser({ sources, initialFilter = 'all', view, onViewChang
           {selected ? selected.name : loading ? '' : `${shown.length} ${shown.length === 1 ? 'item' : 'items'}`}
         </p>
         <div className="dialog-actions">
-          <button className="button" disabled={!selected || busy} onClick={() => { if (selected) onLive(selected) }}><RadioTower size={16} /> Send to Kiosk</button>
-          <button className="button button-primary" disabled={!selected || busy} onClick={() => { if (selected) onSave(selected) }}><Plus size={17} /> Add to playlist</button>
+          <button type="button" className="button" disabled={!canAct} aria-keyshortcuts="Control+Enter" onClick={() => act(onLive)}>
+            <RadioTower size={16} /> Send to Kiosk <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>
+          </button>
+          <button type="button" className="button button-primary" disabled={!canAct} aria-keyshortcuts="Enter" onClick={() => act(onSave)}>
+            <Plus size={17} /> Add to playlist <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>
+          </button>
         </div>
       </div>
     </div>
