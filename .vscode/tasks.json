@@ -5,7 +5,7 @@
   },
   "tasks": [
     {
-      "label": "Nemesa: Run",
+      "label": "Lighthouse Media Center: Run",
       "type": "shell",
       "command": "npm",
       "args": ["run", "tauri", "dev"],
@@ -15,7 +15,7 @@
       "problemMatcher": []
     },
     {
-      "label": "Nemesa: Build Release",
+      "label": "Lighthouse Media Center: Build Release",
       "type": "shell",
       "command": "npm",
       "args": ["run", "tauri", "build"],
@@ -33,7 +33,7 @@
       "problemMatcher": []
     },
     {
-      "label": "Nemesa: Build Debug Binary",
+      "label": "Lighthouse Media Center: Build Debug Binary",
       "type": "shell",
       "command": "cargo",
       "args": [
@@ -48,7 +48,7 @@
       "problemMatcher": []
     },
     {
-      "label": "Nemesa: Start Vite",
+      "label": "Lighthouse Media Center: Start Vite",
       "type": "shell",
       "command": "npm",
       "args": ["run", "dev"],
@@ -72,9 +72,9 @@
       }
     },
     {
-      "label": "Nemesa: Prepare Rust Debugging",
+      "label": "Lighthouse Media Center: Prepare Rust Debugging",
       "dependsOrder": "sequence",
-      "dependsOn": ["Nemesa: Build Debug Binary", "Nemesa: Start Vite"],
+      "dependsOn": ["Lighthouse Media Center: Build Debug Binary", "Lighthouse Media Center: Start Vite"],
       "hide": true,
       "problemMatcher": []
     }

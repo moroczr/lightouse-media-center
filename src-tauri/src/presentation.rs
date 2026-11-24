@@ -271,7 +271,7 @@ pub async fn open_kiosk(
         "index.html#kiosk"
     };
     let builder = WebviewWindowBuilder::new(&app, "kiosk", WebviewUrl::App(page.into()))
-        .title("Nemesa Kiosk")
+        .title("Lighthouse Media Center Kiosk")
         .visible(false)
         .focused(false)
         .decorations(windowed)

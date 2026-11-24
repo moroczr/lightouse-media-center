@@ -1,5 +1,5 @@
 [package]
-name = "nemesa-studio"
+name = "lighthouse-media-center"
 version = "0.1.0"
 description = "A desktop presentation studio"
 edition = "2021"

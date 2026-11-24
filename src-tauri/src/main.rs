@@ -41,5 +41,5 @@ fn main() {
             presentation::report_playback,
         ])
         .run(tauri::generate_context!())
-        .expect("Nemesa Studio could not start");
+        .expect("Lighthouse Media Center could not start");
 }

@@ -4,6 +4,7 @@ import {
   type AudienceCue, type Book, type Cue, type Display, type KioskBackground, type MediaFile, type PlaybackAction, type Project,
   type SavedProject, type Source, type Stage, type Translation, type Verse, emptyStage, isMedia, normalizeProject,
 } from './model'
+import { createVerseSearch, type BibleVerseRow } from './verseSearch'
 
 export const desktop = isTauri()
 const projectKey = 'lighthouse-project-v1'
@@ -20,8 +21,9 @@ const translations: Translation[] = [
   { id: 'WEBPB', name: 'World English Bible (British)' },
 ]
 
-type BibleData = { books: Book[]; verses: [string, number, number, string][] }
+type BibleData = { books: Book[]; verses: BibleVerseRow[] }
 const bibles = new Map<string, Promise<BibleData>>()
+const verseSearches = new Map<string, Promise<ReturnType<typeof createVerseSearch>>>()
 
 function loadBible(translation: string) {
   let request = bibles.get(translation)
@@ -36,7 +38,18 @@ function loadBible(translation: string) {
   return request
 }
 
+function loadVerseSearch(translation: string) {
+  let request = verseSearches.get(translation)
+  if (!request) {
+    request = loadBible(translation).then(({ books, verses }) => createVerseSearch(books, verses))
+    verseSearches.set(translation, request)
+    void request.catch(() => verseSearches.delete(translation))
+  }
+  return request
+}
+
 export const bible = {
+  search: async (translation: string, query: string) => (await loadVerseSearch(translation))(query),
   translations: () => desktop ? invoke<Translation[]>('translations') : Promise.resolve(translations),
   books: async (translation: string) => desktop
     ? invoke<Book[]>('books', { translation })

@@ -2,16 +2,16 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug Nemesa Studio (Rust)",
+      "name": "Debug Lighthouse Media Center (Rust)",
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/src-tauri/target/debug/nemesa-studio",
+      "program": "${workspaceFolder}/src-tauri/target/debug/lighthouse-media-center",
       "windows": {
-        "program": "${workspaceFolder}/src-tauri/target/debug/nemesa-studio.exe"
+        "program": "${workspaceFolder}/src-tauri/target/debug/lighthouse-media-center.exe"
       },
       "cwd": "${workspaceFolder}/src-tauri",
       "sourceLanguages": ["rust"],
-      "preLaunchTask": "Nemesa: Prepare Rust Debugging"
+      "preLaunchTask": "Lighthouse Media Center: Prepare Rust Debugging"
     }
   ]
 }

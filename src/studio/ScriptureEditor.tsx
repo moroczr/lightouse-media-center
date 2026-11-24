@@ -6,6 +6,7 @@ import {
   deleteReferenceSegment, lookupReference, normalizeBook, readVerseWindow, referenceSuggestions, verseLabel, verseWindowSize,
   type PassageVerse, type ReferenceSuggestion,
 } from '../shared/scripture'
+import { canSearchVerseText } from '../shared/verseSearch'
 import { EditorActions, ThemePicker } from './Editors'
 
 const segmentLabels = { book: 'Bible books', chapter: 'Chapters', verse: 'Verses' }
@@ -27,6 +28,10 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
   const [translationError, setTranslationError] = useState('')
   const [theme, setTheme] = useState<Theme>(existing?.theme ?? 'violet')
   const [draft, setDraft] = useState<Draft>()
+  const [byText, setByText] = useState(false)
+  const [query, setQuery] = useState('')
+  const [textResult, setTextResult] = useState<LoadResult<PassageVerse>>()
+  const [textMatch, setTextMatch] = useState<{ key: string; verse: PassageVerse }>()
   const [focused, setFocused] = useState(false)
   const [dismissed, setDismissed] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
@@ -60,19 +65,25 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
     ? verses.values.find(row => row.verse === Number(verseText)) : undefined
   const options = useMemo(() => referenceSuggestions(reference, verses && 'values' in verses ? verses.values : []), [reference, verses])
   const finished = draft?.complete ?? !!initial
-  const suggestionsOpen = focused && !dismissed && !finished && options.length > 0
+  const suggestionsOpen = !byText && focused && !dismissed && !finished && options.length > 0
   const activeSuggestion = suggestionsOpen ? options[activeIndex] : undefined
   const search = useMemo(() => book && chapter !== undefined && foundVerse
     ? { book, chapter, ...foundVerse } : undefined, [book, chapter, foundVerse])
   const browse = navigation?.search === search ? navigation : undefined
   const start = browse?.start ?? search
-  const selected = browse?.selected ?? search
   const currentWindow = verseWindow?.start === start ? verseWindow?.value : undefined
-  const visible = currentWindow?.visible ?? browse?.visible ?? (start ? [start] : [])
+  const phrase = query.trim()
+  const textKey = byText && canSearchVerseText(phrase) ? `${translation}/${phrase}` : ''
+  const result = textResult?.key === textKey ? textResult : undefined
+  const hits = result && 'values' in result ? result.values : []
+  const activeMatch = textMatch?.key === textKey && hits.includes(textMatch.verse) ? textMatch.verse : hits[0]
+  const selected = byText ? activeMatch : browse?.selected ?? search
+  const visible = byText ? hits : currentWindow?.visible ?? browse?.visible ?? (start ? [start] : [])
   const title = selected ? verseLabel(selected) : ''
   const selectedIndex = visible.findIndex(verse => verseLabel(verse) === title)
-  const previousVerse = selectedIndex > 0 ? visible[selectedIndex - 1] : currentWindow?.previous
-  const nextVerse = visible[selectedIndex + 1] ?? currentWindow?.following
+  const previousVerse = visible[selectedIndex - 1] ?? (byText ? undefined : currentWindow?.previous)
+  const nextVerse = visible[selectedIndex + 1] ?? (byText ? undefined : currentWindow?.following)
+  const canNavigate = byText || !!currentWindow
   const error = translationError || (books && 'error' in books ? books.error : '')
     || (verses && 'error' in verses ? verses.error : '')
 
@@ -91,6 +102,22 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
     }).catch(reason => { if (active) setBookList({ key: translation, error: String(reason) }) })
     return () => { active = false }
   }, [translation])
+
+  useEffect(() => {
+    if (!textKey) return
+    let active = true
+    const timer = window.setTimeout(() => {
+      void bible.search(translation, phrase).then(values => {
+        if (active) setTextResult({ key: textKey, values })
+      }).catch(reason => {
+        if (active) setTextResult({ key: textKey, error: String(reason) })
+      })
+    }, 140)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [textKey, translation, phrase])
 
   const readChapter = useCallback((id: string, number: number) => {
     const key = `${translation}/${id}/${number}`
@@ -198,7 +225,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
     setActiveIndex(-1)
   }
 
-  function searchKeys(event: KeyboardEvent<HTMLInputElement>) {
+  function referenceKeys(event: KeyboardEvent<HTMLInputElement>) {
     if (event.nativeEvent.isComposing) return
     if (event.key === 'Backspace' || event.key === 'Delete') {
       event.preventDefault()
@@ -233,12 +260,19 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
   }
 
   function selectVerse(verse: PassageVerse) {
-    if (search && start) setNavigation({ search, start, selected: verse, visible })
+    if (byText) setTextMatch({ key: textKey, verse })
+    else if (search && start) setNavigation({ search, start, selected: verse, visible })
   }
 
   function moveVerse(direction: -1 | 1, focusRow = false) {
     const verse = direction === -1 ? previousVerse : nextVerse
-    if (!search || !start || !currentWindow || !verse) return
+    if (!verse) return
+    if (byText) {
+      focusSelectedRow.current = focusRow
+      selectVerse(verse)
+      return
+    }
+    if (!search || !start || !currentWindow) return
 
     let rows = visible
     if (direction === -1 && selectedIndex === 0) {
@@ -250,6 +284,24 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
     setNavigation({
       search, start: rows === visible ? start : rows[0], selected: verse, visible: rows,
     })
+  }
+
+  function textKeys(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.nativeEvent.isComposing) return
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      selectedRow.current?.focus()
+    } else if (selected && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      event.preventDefault()
+      moveVerse(event.key === 'ArrowUp' ? -1 : 1)
+    }
+  }
+
+  function changeMode(next: boolean) {
+    setByText(next)
+    setActiveIndex(-1)
+    setDismissed(false)
+    inputRef.current?.focus()
   }
 
   function makeCue(): ScriptureCue | undefined {
@@ -269,6 +321,13 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
   } else if (options.length) status = 'Choose a book to continue.'
   else if (bookText) status = 'Book not found. Try a book name or abbreviation.'
 
+  if (byText) {
+    if (!textKey) status = 'Enter a few letters or words from a verse.'
+    else if (!result) status = 'Searching verses…'
+    else if ('error' in result) status = result.error
+    else status = 'No matching verses. Try fewer words or a different phrase.'
+  }
+
   return (
     <form className="editor" onSubmit={event => {
       event.preventDefault()
@@ -277,21 +336,28 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
     }}>
       <div className="scripture-toolbar">
         <div className="scripture-reference">
-          <label htmlFor={`${listId}-input`}>Reference</label>
+          <div className="scripture-search-heading">
+            <label htmlFor={`${listId}-input`}>{byText ? 'Verse text' : 'Reference'}</label>
+            <div className="scripture-modes" role="group" aria-label="Search by">
+              <button type="button" className="button button-quiet" aria-pressed={!byText} onClick={() => changeMode(false)}>Reference</button>
+              <button type="button" className="button button-quiet" aria-pressed={byText} onClick={() => changeMode(true)}>Verse text</button>
+            </div>
+          </div>
           <div className="search-box">
             <Search size={17} aria-hidden="true" />
-            <input id={`${listId}-input`} role="combobox" aria-autocomplete="list" aria-expanded={suggestionsOpen}
+            <input id={`${listId}-input`} role={byText ? undefined : 'combobox'}
+              aria-autocomplete={byText ? undefined : 'list'} aria-expanded={byText ? undefined : suggestionsOpen}
               aria-controls={suggestionsOpen ? listId : undefined}
               aria-activedescendant={activeSuggestion ? `${listId}-${activeSuggestion.id}` : undefined}
               ref={element => {
                 inputRef.current = element
                 if (element) element.autofocus = true
               }}
-              autoComplete="off" spellCheck={false} maxLength={80}
-              value={text} placeholder="e.g. 1 Pet 2:24"
+              autoComplete="off" spellCheck={false} maxLength={byText ? 200 : 80}
+              value={byText ? query : text} placeholder={byText ? 'e.g. love your enemies' : 'e.g. 1 Pet 2:24'}
               onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); setActiveIndex(-1) }}
-              onChange={changeReference}
-              onKeyDown={searchKeys} />
+              onChange={byText ? event => setQuery(event.target.value) : changeReference}
+              onKeyDown={byText ? textKeys : referenceKeys} />
           </div>
           {suggestionsOpen && (
             <ul id={listId} className="scripture-suggestions" role="listbox" aria-label={segmentLabels[segment]}>
@@ -319,7 +385,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
           </span>
         </label>
       </div>
-      {selected && start ? (
+      {selected ? (
         <section className="verse-browser" aria-label="Verse results" onKeyDown={event => {
           if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
           event.preventDefault()
@@ -327,14 +393,16 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
         }}>
           <header className="verse-browser-header">
             <p aria-live="polite"><BookOpen size={17} aria-hidden="true" /><strong>{title}</strong></p>
-            <div role="group" aria-label="Navigate verses">
-              <button type="button" className="icon-button" aria-label="Move up one verse" title="Previous verse (↑)"
-                disabled={!previousVerse || !currentWindow} onClick={() => moveVerse(-1)}><ChevronUp size={17} aria-hidden="true" /></button>
-              <button type="button" className="icon-button" aria-label="Move down one verse" title="Next verse (↓)"
-                disabled={!nextVerse || !currentWindow} onClick={() => moveVerse(1)}><ChevronDown size={17} aria-hidden="true" /></button>
+            <div role="group" aria-label={byText ? 'Navigate matches' : 'Navigate verses'}>
+              <button type="button" className="icon-button" aria-label={byText ? 'Previous match' : 'Move up one verse'}
+                title={byText ? 'Previous match (↑)' : 'Previous verse (↑)'}
+                disabled={!previousVerse || !canNavigate} onClick={() => moveVerse(-1)}><ChevronUp size={17} aria-hidden="true" /></button>
+              <button type="button" className="icon-button" aria-label={byText ? 'Next match' : 'Move down one verse'}
+                title={byText ? 'Next match (↓)' : 'Next verse (↓)'}
+                disabled={!nextVerse || !canNavigate} onClick={() => moveVerse(1)}><ChevronDown size={17} aria-hidden="true" /></button>
             </div>
           </header>
-          <ul className="verse-results" ref={verseResults} aria-label="Verses" aria-busy={!currentWindow}>
+          <ul className="verse-results" ref={verseResults} aria-label={byText ? 'Matching verses' : 'Verses'} aria-busy={!canNavigate}>
             {visible.map(verse => {
               const label = verseLabel(verse)
               return <li key={label}>
@@ -348,11 +416,11 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
               </li>
             })}
           </ul>
-          {currentWindow?.incomplete && <p className="verse-browser-error" role="status">Some nearby verses could not be loaded.</p>}
+          {!byText && currentWindow?.incomplete && <p className="verse-browser-error" role="status">Some nearby verses could not be loaded.</p>}
         </section>
       ) : (
         <div className="verse-preview" aria-live="polite">
-          <BookOpen size={17} aria-hidden="true" /><span>{error || status}</span>
+          <BookOpen size={17} aria-hidden="true" /><span>{byText ? status : error || status}</span>
         </div>
       )}
       <ThemePicker value={theme} onChange={setTheme} />

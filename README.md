@@ -1,6 +1,6 @@
-# Nemesa Studio
+# Lighthouse Media Center
 
-Nemesa Studio is an offline presentation app for Windows and macOS. Studio controls the show and Kiosk renders it full-screen on the chosen audience display.
+Lighthouse Media Center is an offline presentation app for Windows and macOS. Studio controls the show and Kiosk renders it full-screen on the chosen audience display.
 
 ## Run from source
 
@@ -30,4 +30,4 @@ Use the sidebar toggle at the top left to hide or restore the playlists and libr
 
 Add folders under **Media sources**, then open **Add Media** to search across those folders and their subfolders. Switch between list and tile views, filter by **Movies** or **Audio**, and select a file to add to the playlist or send to Kiosk. Use **Open file** for a file outside your sources. The app keeps references to the original files. For cross-platform playback, start with H.264/AAC video in MP4 and MP3 or WAV audio. Additional codecs depend on the system WebView.
 
-Playlists and settings are saved locally in SQLite. In **Bible lookup**, choose a translation and type a reference such as `1 Pet 2:24`. Book, chapter, and verse suggestions narrow as you type. A single match fills in automatically. Use Backspace to remove a segment. The results highlight the searched verse and fill the panel with nearby verses. Click a verse or use the up and down arrows to choose which one to cue. The list scrolls as the selection moves past the visible verses. The app includes the complete 66-book editions of the [World English Bible](https://ebible.org/find/show.php?id=engwebp) and the [World English Bible British Edition](https://ebible.org/find/show.php?id=engwebpb), sourced from the eBible.org public-domain verse-per-line archives. Both are available offline.
+Playlists and settings are saved locally in SQLite. In **Bible lookup**, choose a translation and type a reference such as `1 Pet 2:24`. Book, chapter, and verse suggestions narrow as you type. A single match fills in automatically. Use Backspace to remove a segment. The results highlight the searched verse and fill the panel with nearby verses. Click a verse or use the up and down arrows to choose which one to cue. The list scrolls as the selection moves past the visible verses. Switch to **Verse text** to search by remembered words or phrases. Search ranks exact phrases first and can find partial words and common typos. The app includes the complete 66-book editions of the [World English Bible](https://ebible.org/find/show.php?id=engwebp) and the [World English Bible British Edition](https://ebible.org/find/show.php?id=engwebpb), sourced from the eBible.org public-domain verse-per-line archives. Both are available offline.
