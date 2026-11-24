@@ -76,10 +76,9 @@ export interface Display {
   studio: boolean
 }
 
-export type AudienceCue = ItemBase & (
-  | { kind: 'text' | 'scripture'; text: string; caption?: string; theme: Theme }
-  | { kind: 'video' | 'audio'; url: string }
-)
+export type AudienceScriptureCue = ScriptureCue & { text: string; caption: string }
+
+export type AudienceCue = TextCue | AudienceScriptureCue | (ItemBase & { kind: 'video' | 'audio'; url: string })
 
 export type PlaybackAction =
   | { kind: 'play' | 'pause' | 'stop' }

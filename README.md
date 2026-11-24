@@ -21,7 +21,7 @@ To package the app on the current platform, run `npm run tauri build`. On macOS,
 2. Choose a playlist and click a cue to see it in **Next up**. **Previous** and **Next** move the queued selection without changing the current audience output.
 3. Click **Go live** to take the queued cue live and queue the next item. Nested playlists play in order, depth first. Groups can be expanded or collapsed independently of that order.
 4. To show a one-off item, open **Add Media**, **Bible lookup**, or **Text slide** and select **Send to Kiosk**. The queued playlist item stays in place.
-5. When video or audio is live, use the controls under **Live output** to play, pause, stop and rewind, seek, or skip 10 seconds in either direction. The vertical Kiosk volume and mute controls beside **Next up** are available before and during playback, including when a text or Bible verse cue is live.
+5. When video or audio is live, use the controls under **Live output** to play, pause, stop and rewind, seek, or skip 10 seconds in either direction. For a Bible verse, **Previous verse** and **Next verse** under **Live output** change the displayed verse without advancing the playlist. The vertical Kiosk volume and mute controls beside **Next up** are available before and during playback, including when a text or Bible verse cue is live.
 6. **Blackout** hides the audience picture while audio continues. **Clear live output** removes the current cue. Press **Escape** in the Kiosk to close it.
 
 Use the **Kiosk background** image button beside **Launch Kiosk** to choose a PNG, JPEG, or WebP image. Studio saves a copy and shows it whenever no cue is live, including after a restart. **Remove image** restores the black idle screen.

@@ -2,8 +2,9 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import {
   type AudienceCue, type Book, type Cue, type Display, type KioskBackground, type MediaFile, type PlaybackAction, type Project,
-  type SavedProject, type Source, type Stage, type Translation, type Verse, emptyStage, isMedia, normalizeProject,
+  type Reference, type SavedProject, type Source, type Stage, type Translation, type Verse, emptyStage, isMedia, normalizeProject,
 } from './model'
+import { formatScriptureCue, readAdjacentVerses } from './scripture'
 import { createVerseSearch, type BibleVerseRow } from './verseSearch'
 
 export const desktop = isTauri()
@@ -59,6 +60,14 @@ export const bible = {
     : (await loadBible(translation)).verses
       .filter(row => row[0] === book && row[1] === chapter)
       .map(row => ({ verse: row[2], text: row[3] })),
+}
+
+export async function adjacentVerses({ translation, book, chapter, verse }: Reference) {
+  const books = await bible.books(translation)
+  const current = books.find(entry => entry.id === book)
+  if (!current) throw new Error('This book is unavailable in the selected translation.')
+  return readAdjacentVerses(books, { book: current, chapter, verse },
+    (bookId, number) => bible.verses(translation, bookId, number))
 }
 
 export async function loadProject(): Promise<Project | null> {
@@ -157,8 +166,9 @@ export function getStage(): Promise<Stage> {
   return desktop ? invoke('get_stage') : Promise.resolve(browserStage)
 }
 
-export function present(cue: AudienceCue | null): Promise<Stage> {
-  if (desktop) return invoke('present', { cue })
+export function present(cue: AudienceCue | null, expectedRevision?: number): Promise<Stage> {
+  if (desktop) return invoke('present', { cue, expectedRevision })
+  if (expectedRevision !== undefined && browserStage.revision !== expectedRevision) return Promise.resolve(browserStage)
   const next = {
     ...emptyStage,
     cue,
@@ -354,7 +364,7 @@ export async function resolveCue(cue: Cue): Promise<AudienceCue> {
     const chapterVerses = await bible.verses(translation, book, chapter)
     const text = chapterVerses.find(row => row.verse === verse)?.text
     if (!text) throw new Error('This verse is unavailable in the selected translation.')
-    return { ...base, kind: cue.kind, theme: cue.theme, text, caption: `${cue.title} · ${translation}` }
+    return formatScriptureCue(cue, text)
   }
   return { ...base, kind: cue.kind, url: await mediaUrl(cue.path) }
 }

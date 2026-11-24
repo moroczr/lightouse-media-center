@@ -14,6 +14,7 @@ import {
   type AudienceCue, type Cue, type Display, type Group, type Item, type ItemKind,
   type Project, type ScriptureCue, type TextSlide, welcomePreview,
 } from '../shared/model'
+import { formatScriptureCue, verseLabel, type PassageVerse } from '../shared/scripture'
 import { CueList, ItemIcon, Menu } from './CueList'
 import { Dialog, NameEditor, TextEditor } from './Editors'
 import { KioskBackgroundEditor } from './KioskBackgroundEditor'
@@ -219,6 +220,17 @@ export default function Studio() {
   function takeCue(id: string) {
     const cue = sequence.find(item => item.id === id)
     if (cue) void send(cue, true)
+  }
+
+  function showAdjacentVerse(verse: PassageVerse) {
+    const cue = stage.cue
+    if (cue?.kind !== 'scripture' || transmittingRef.current) return
+    const updated = formatScriptureCue({
+      ...cue,
+      title: verseLabel(verse),
+      reference: { translation: cue.reference.translation, book: verse.book.id, chapter: verse.chapter, verse: verse.verse },
+    }, verse.text)
+    void updateStage(present(updated, stage.revision))
   }
 
   async function toggleKiosk() {
@@ -462,6 +474,7 @@ export default function Studio() {
               onPrevious={() => nudge(-1)} onNext={() => nudge(1)} onGoLive={goLive}
               onBlackout={() => void updateStage(setBlackout(!stage.blackout))}
               onClear={() => void updateStage(present(null))}
+              onNavigateVerse={showAdjacentVerse}
               onPlayback={action => void updateStage(controlPlayback(stage.revision, action))}
             />
 

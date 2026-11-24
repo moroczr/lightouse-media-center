@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Ban, ChevronLeft, ChevronRight, Monitor, MonitorX, Pause, Play, RadioTower, RotateCcw, RotateCw, Square, Volume2, VolumeX } from 'lucide-react'
 import { Audience } from '../shared/Audience'
-import { clockTime, isMedia, type AudienceCue, type PlaybackAction, type Stage } from '../shared/model'
+import { adjacentVerses } from '../shared/bridge'
+import { clockTime, isMedia, type AudienceCue, type PlaybackAction, type Reference, type Stage } from '../shared/model'
+import type { PassageVerse } from '../shared/scripture'
 import { ItemIcon } from './CueList'
 
 interface PreviewProps {
@@ -21,6 +23,7 @@ interface PreviewProps {
   onGoLive: () => void
   onBlackout: () => void
   onClear: () => void
+  onNavigateVerse: (verse: PassageVerse) => void
   onPlayback: (action: PlaybackAction) => void
 }
 
@@ -47,7 +50,7 @@ function MediaPlayback({ stage, onAction }: {
   }, [onAction])
 
   return (
-    <div className="media-playback" role="group" aria-label="Media playback">
+    <div className="live-controls media-playback" role="group" aria-label="Media playback">
       <div className="media-playback-buttons">
         <button className="icon-button" aria-label="Play media" title="Start or resume playback" disabled={stage.playing} onClick={() => onAction({ kind: 'play' })}><Play size={16} /></button>
         <button className="icon-button" aria-label="Pause media" title="Pause playback" disabled={!stage.playing} onClick={() => onAction({ kind: 'pause' })}><Pause size={16} /></button>
@@ -73,6 +76,42 @@ function MediaPlayback({ stage, onAction }: {
         />
         <span className="media-time">{clockTime(duration)}</span>
       </div>
+    </div>
+  )
+}
+
+function VerseNavigation({ reference, busy, onSelect }: {
+  reference: Reference
+  busy: boolean
+  onSelect: (verse: PassageVerse) => void
+}) {
+  const { translation, book, chapter, verse } = reference
+  const key = `${translation}/${book}/${chapter}/${verse}`
+  const [result, setResult] = useState<{
+    key: string; neighbors?: Awaited<ReturnType<typeof adjacentVerses>>
+  }>()
+  const current = result?.key === key ? result : undefined
+  const { previous, next } = current?.neighbors ?? {}
+
+  useEffect(() => {
+    let active = true
+    void adjacentVerses({ translation, book, chapter, verse }).then(neighbors => {
+      if (active) setResult({ key, neighbors })
+    }).catch(() => {
+      if (active) setResult({ key })
+    })
+    return () => { active = false }
+  }, [translation, book, chapter, verse, key])
+
+  return (
+    <div className="live-controls verse-navigation" role="group" aria-label="Live verse navigation" aria-busy={!current}>
+      <button type="button" className="button" disabled={busy || !previous} onClick={() => previous && onSelect(previous)}>
+        <ChevronLeft size={16} aria-hidden="true" /> Previous verse
+      </button>
+      <button type="button" className="button" disabled={busy || !next} onClick={() => next && onSelect(next)}>
+        Next verse <ChevronRight size={16} aria-hidden="true" />
+      </button>
+      {current && !current.neighbors && <span role="status">Could not load adjacent verses.</span>}
     </div>
   )
 }
@@ -149,6 +188,9 @@ export function Preview(props: PreviewProps) {
           </div>
         </section>
         {media && <MediaPlayback key={stage.revision} stage={stage} onAction={props.onPlayback} />}
+        {stage.cue?.kind === 'scripture' && (
+          <VerseNavigation reference={stage.cue.reference} busy={props.busy} onSelect={props.onNavigateVerse} />
+        )}
         <section className="preview-panel preview-panel--next" aria-labelledby="next-heading">
           <header className="preview-heading">
             <h2 id="next-heading"><ChevronRight size={17} /> Next up</h2>

@@ -1,4 +1,4 @@
-import { type Book, type Verse } from './model'
+import type { AudienceScriptureCue, Book, ScriptureCue, Verse } from './model'
 
 const abbreviations: Readonly<Record<string, string>> = {
   JDG: 'judg',
@@ -98,12 +98,43 @@ export function verseLabel({ book, chapter, verse }: PassageVerse) {
   return `${book.name} ${chapter}:${verse}`
 }
 
+export function formatScriptureCue(cue: ScriptureCue, text: string): AudienceScriptureCue {
+  return { ...cue, text, caption: `${cue.title} · ${cue.reference.translation}` }
+}
+
 function adjacentChapter(books: readonly Book[], position: ChapterPosition, direction: -1 | 1): ChapterPosition | undefined {
   const { book } = position
   const chapter = position.chapter + direction
   if (chapter >= 1 && chapter <= book.chapters) return { book, chapter }
   const neighbor = books[books.findIndex(candidate => candidate.id === book.id) + direction]
   if (neighbor) return { book: neighbor, chapter: direction === -1 ? neighbor.chapters : 1 }
+}
+
+export async function readAdjacentVerses(
+  books: readonly Book[],
+  start: ChapterPosition & Pick<Verse, 'verse'>,
+  readChapter: (bookId: string, chapter: number) => Promise<Verse[]>,
+) {
+  const { book, chapter, verse } = start
+  const current = await readChapter(book.id, chapter)
+  const index = current.findIndex(row => row.verse === verse)
+  if (index < 0) throw new Error('This verse is unavailable in the selected translation.')
+
+  async function readNeighbor(direction: -1 | 1): Promise<PassageVerse | undefined> {
+    const adjacent = current[index + direction]
+    if (adjacent) return { ...adjacent, book, chapter }
+
+    let position = adjacentChapter(books, start, direction)
+    while (position) {
+      const rows = await readChapter(position.book.id, position.chapter)
+      const nearest = rows.at(direction === -1 ? -1 : 0)
+      if (nearest) return { ...nearest, ...position }
+      position = adjacentChapter(books, position, direction)
+    }
+  }
+
+  const [previous, next] = await Promise.all([readNeighbor(-1), readNeighbor(1)])
+  return { previous, next }
 }
 
 // Ten rows cover the tallest verse panel even when every verse fits on one line.

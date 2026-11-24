@@ -21,6 +21,14 @@ pub struct Cue {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
+struct ScriptureReference {
+    translation: String,
+    book: String,
+    chapter: u32,
+    verse: u32,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 enum Content {
     Text {
@@ -33,6 +41,7 @@ enum Content {
         text: String,
         theme: String,
         caption: String,
+        reference: ScriptureReference,
     },
     Video {
         url: String,
@@ -398,9 +407,13 @@ pub fn present(
     app: AppHandle,
     presentation: State<'_, Presentation>,
     cue: Option<Cue>,
+    expected_revision: Option<u64>,
 ) -> CommandResult<Stage> {
     studio_only(&window)?;
     presentation.update(&app, |stage| {
+        if expected_revision.is_some_and(|revision| revision != stage.revision) {
+            return false;
+        }
         *stage = Stage {
             revision: stage.revision + 1,
             playing: cue.as_ref().is_some_and(Cue::is_media),
