@@ -414,14 +414,19 @@ pub async fn import_bible(
     window: WebviewWindow,
     library: State<'_, Library>,
     app: AppHandle,
+    title: Option<String>,
+    filter_name: Option<String>,
 ) -> CommandResult<Option<BibleSettings>> {
     studio_only(&window)?;
     let Some(picked) = app
         .dialog()
         .file()
         .set_parent(&window)
-        .set_title("Add a Bible database")
-        .add_filter("Bible databases", &["sqlite", "sqlite3", "db", "json"])
+        .set_title(title.as_deref().unwrap_or("Add a Bible database"))
+        .add_filter(
+            filter_name.as_deref().unwrap_or("Bible databases"),
+            &["sqlite", "sqlite3", "db", "json"],
+        )
         .blocking_pick_file()
     else {
         return Ok(None);

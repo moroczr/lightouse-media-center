@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Check, CircleAlert, FolderOpen, FolderPlus, LayoutGrid, List, Plus, RadioTower, Search } from 'lucide-react'
+import { useLanguage } from '../shared/i18n'
+import { translateError, type Message } from '../shared/messages'
 import { desktop, listMedia, pickMedia } from '../shared/bridge'
 import { type MediaFile, type Source } from '../shared/model'
 import { ItemIcon } from './CueList'
@@ -8,7 +10,7 @@ export type MediaView = 'list' | 'tile'
 type MediaFilter = 'all' | MediaFile['kind']
 type CatalogItem = MediaFile & { location: string }
 
-const filters: { value: MediaFilter; label: string }[] = [
+const filters: { value: MediaFilter; label: Message }[] = [
   { value: 'all', label: 'All media' },
   { value: 'video', label: 'Movies' },
   { value: 'audio', label: 'Audio' },
@@ -33,6 +35,7 @@ export function MediaBrowser({ sources, initialFilter = 'all', view, onViewChang
   onSave: (file: MediaFile) => void;
   onLive: (file: MediaFile) => void;
 }) {
+  const { t } = useLanguage()
   const [filter, setFilter] = useState(initialFilter)
   const [query, setQuery] = useState('')
   const [selectedPath, setSelectedPath] = useState<string>()
@@ -70,13 +73,13 @@ export function MediaBrowser({ sources, initialFilter = 'all', view, onViewChang
     const search = query.trim().toLocaleLowerCase()
     const items = current?.items ?? []
     const results = openedFile && !items.some(file => file.path === openedFile.path)
-      ? [{ ...openedFile, location: 'Opened file' }, ...items]
+      ? [{ ...openedFile, location: t('Opened file') }, ...items]
       : items
     return results.filter(file => (
       (filter === 'all' || file.kind === filter)
       && (file.name.toLocaleLowerCase().includes(search) || file.location.toLocaleLowerCase().includes(search))
     ))
-  }, [current, filter, openedFile, query])
+  }, [current, filter, openedFile, query, t])
   const selectedIndex = shown.findIndex(file => file.path === selectedPath)
   const selected = shown[selectedIndex]
   const canAct = !!selected && !busy && !picking
@@ -150,36 +153,36 @@ export function MediaBrowser({ sources, initialFilter = 'all', view, onViewChang
         <label className="search-box">
           <Search size={17} aria-hidden="true" />
           <input type="search" ref={input => { if (input) input.autofocus = true }}
-            aria-label="Search media" value={query} placeholder="Search files and folders"
+            aria-label={t('Search media')} value={query} placeholder={t('Search files and folders')}
             onChange={event => setQuery(event.target.value)} />
         </label>
         <div className="media-tools">
-          <button className="button" disabled={picking} onClick={() => void pick('file')}><FolderOpen size={16} /> Open file</button>
-          <button className="button" disabled={picking} onClick={() => void pick('folder')}><FolderPlus size={16} /> Add folder</button>
+          <button className="button" disabled={picking} onClick={() => void pick('file')}><FolderOpen size={16} /> {t('Open file')}</button>
+          <button className="button" disabled={picking} onClick={() => void pick('folder')}><FolderPlus size={16} /> {t('Add folder')}</button>
         </div>
       </div>
 
       <div className="media-options">
-        <div className="media-segment" role="group" aria-label="Media type">
+        <div className="media-segment" role="group" aria-label={t('Media type')}>
           {filters.map(option => (
             <button key={option.value} className="button" aria-pressed={filter === option.value}
-              onClick={() => setFilter(option.value)}>{option.label}</button>
+              onClick={() => setFilter(option.value)}>{t(option.label)}</button>
           ))}
         </div>
-        <div className="media-segment" role="group" aria-label="Media view">
-          <button className="icon-button" title="List view" aria-label="List view" aria-pressed={view === 'list'}
+        <div className="media-segment" role="group" aria-label={t('Media view')}>
+          <button className="icon-button" title={t('List view')} aria-label={t('List view')} aria-pressed={view === 'list'}
             onClick={() => onViewChange('list')}><List size={17} /></button>
-          <button className="icon-button" title="Tile view" aria-label="Tile view" aria-pressed={view === 'tile'}
+          <button className="icon-button" title={t('Tile view')} aria-label={t('Tile view')} aria-pressed={view === 'tile'}
             onClick={() => onViewChange('tile')}><LayoutGrid size={17} /></button>
         </div>
       </div>
 
-      {pickerError && <p className="media-warning" role="alert"><CircleAlert size={15} />{pickerError}</p>}
+      {pickerError && <p className="media-warning" role="alert"><CircleAlert size={15} />{translateError(t, pickerError)}</p>}
       {!!current?.unavailable.length && (
-        <p className="media-warning" role="status"><CircleAlert size={15} />Couldn’t scan {current.unavailable.join(', ')}.</p>
+        <p className="media-warning" role="status"><CircleAlert size={15} />{t('Couldn’t scan {folders}.', { folders: current.unavailable.join(', ') })}</p>
       )}
 
-      <div className="media-results" role="region" aria-label="Media results" aria-busy={loading}>
+      <div className="media-results" role="region" aria-label={t('Media results')} aria-busy={loading}>
         {shown.length ? (
           <ul ref={resultList} className={`media-entries media-entries--${view}`}>
             {shown.map((file, index) => (
@@ -196,30 +199,30 @@ export function MediaBrowser({ sources, initialFilter = 'all', view, onViewChang
                     <strong>{file.name}</strong>
                     <span>{file.location}</span>
                   </span>
-                  <span className="media-result-type">{file.kind === 'video' ? 'Movie' : 'Audio'}</span>
+                  <span className="media-result-type">{file.kind === 'video' ? t('Movie') : t('Audio')}</span>
                   <Check className="media-result-check" size={15} aria-hidden="true" />
                 </button>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="media-empty" role="status">{loading ? 'Scanning media folders…'
-            : !sources.length && !openedFile ? 'Add a folder to browse your media, or open a file.'
-            : query.trim() || filter !== 'all' ? 'No media matches your search or filter.'
-            : 'No media found in your source folders.'}</p>
+          <p className="media-empty" role="status">{loading ? t('Scanning media folders…')
+            : !sources.length && !openedFile ? t('Add a folder to browse your media, or open a file.')
+            : query.trim() || filter !== 'all' ? t('No media matches your search or filter.')
+            : t('No media found in your source folders.')}</p>
         )}
       </div>
 
       <div className="media-footer">
         <p className="media-selection" role="status" title={selected?.name}>
-          {selected ? selected.name : loading ? '' : `${shown.length} ${shown.length === 1 ? 'item' : 'items'}`}
+          {selected ? selected.name : loading ? '' : t(shown.length === 1 ? '{count} item' : '{count} items', { count: shown.length })}
         </p>
         <div className="dialog-actions">
           <button type="button" className="button" disabled={!canAct} aria-keyshortcuts="Control+Enter" onClick={() => act(onLive)}>
-            <RadioTower size={16} /> Send to Kiosk <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>
+            <RadioTower size={16} /> {t('Send to Kiosk')} <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>
           </button>
           <button type="button" className="button button-primary" disabled={!canAct} aria-keyshortcuts="Enter" onClick={() => act(onSave)}>
-            <Plus size={17} /> Add to playlist <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>
+            <Plus size={17} /> {t('Add to playlist')} <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>
           </button>
         </div>
       </div>

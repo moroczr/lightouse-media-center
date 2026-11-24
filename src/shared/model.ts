@@ -145,13 +145,13 @@ export const emptyStage: Stage = {
   error: null,
 }
 
-export const kindNames: Record<ItemKind, string> = {
+export const kindNames = {
   text: 'Text slide',
   scripture: 'Scripture',
   video: 'Video',
   audio: 'Audio',
   playlist: 'Nested playlist',
-}
+} as const satisfies Record<ItemKind, string>
 
 type LegacyTextSlide = Omit<TextCue, 'caption'>
 type SavedTextSlide = TextSlide & { caption?: string }

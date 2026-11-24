@@ -3,6 +3,8 @@ import {
   BookOpen, ChevronDown, CircleAlert, Ellipsis, FolderOpen, FolderPlus, Image as ImageIcon, LibraryBig, ListMusic,
   Monitor, MonitorOff, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, Settings, Trash2, Type, X,
 } from 'lucide-react'
+import { useLanguage } from '../shared/i18n'
+import { translateError, type Message } from '../shared/messages'
 import { useStage } from '../shared/Audience'
 import { useKioskBackground } from '../shared/KioskBackground'
 import {
@@ -47,7 +49,7 @@ const libraryActions = {
 } as const
 
 const libraryItems = Object.values(libraryActions)
-const cueActions: readonly { kind: AddCueKind; label: string; shortcut?: string }[] = [
+const cueActions: readonly { kind: AddCueKind; label: Message; shortcut?: string }[] = [
   libraryActions.text, libraryActions.scripture, libraryActions.media,
   { kind: 'video', label: kindNames.video },
   { kind: 'audio', label: kindNames.audio },
@@ -68,6 +70,7 @@ function playlistPath(root: Group, target: string): string[] | undefined {
 }
 
 export default function Studio() {
+  const { language, t } = useLanguage()
   const [project, setProject] = useState<Project>(starterProject)
   const [loaded, setLoaded] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -369,18 +372,18 @@ export default function Studio() {
   }
 
   function createSlideLibrary(parent: string, name: string) {
-    if (!loaded) return saveError || 'Wait for the workspace to finish loading.'
+    if (!loaded) return saveError || t('Wait for the workspace to finish loading.')
     const folder = normalizeTextSlideFolder(name)
-    if (!folder) return 'Enter a library name.'
+    if (!folder) return t('Enter a library name.')
     if (project.slideLibraries.some(path => path.toLocaleLowerCase() === folder.toLocaleLowerCase())) {
-      return 'A slide library with this name already exists.'
+      return t('A slide library with this name already exists.')
     }
     setProject(current => ({ ...current, slideLibraries: [...current.slideLibraries, folder] }))
     setEditor({ kind: 'text-library', parent, folder })
   }
 
   function saveLibraryTextSlide(parent: string, slide: TextSlide, folder: string) {
-    if (!project.slideLibraries.includes(folder)) return 'This slide library is unavailable.'
+    if (!project.slideLibraries.includes(folder)) return t('This slide library is unavailable.')
     setProject(current => ({
       ...current,
       textLibrary: [...current.textLibrary.filter(item => item.slide.id !== slide.id), { folder, slide }],
@@ -414,7 +417,7 @@ export default function Studio() {
       <button type="button" key={kind} className={className} onClick={() => openEditor(kind, parent)}
         aria-keyshortcuts={shortcut ? `Control+${shortcut}` : undefined}>
         {kind === 'media' ? <LibraryBig size={16} aria-hidden="true" /> : <ItemIcon kind={kind} size={14} />}
-        {label}
+        {t(label)}
         {shortcut && <kbd className="cue-shortcut" aria-hidden="true">Ctrl+{shortcut}</kbd>}
       </button>
     ))
@@ -475,65 +478,67 @@ export default function Studio() {
     setEditor(null)
   }
 
-  const title = editor?.kind === 'playlist' ? (editor.parent ? 'New nested playlist' : 'New playlist')
-    : editor?.kind === 'rename' ? `Rename ${editor.existing.kind === 'playlist' ? 'playlist' : 'cue'}`
-    : editor?.kind === 'text' ? (editor.existing ? 'Edit text slide' : 'New one-off text slide')
-    : editor?.kind === 'text-library' ? 'Text slide library'
-    : editor?.kind === 'new-slide-library' ? 'New slide library'
-    : editor?.kind === 'library-text' ? (editor.existing ? 'Edit saved text slide' : 'New text slide')
-    : editor?.kind === 'scripture' ? (editor.existing ? 'Edit scripture cue' : 'Bible lookup')
-    : editor?.kind === 'media' ? 'Add Media'
-    : editor?.kind === 'kiosk-background' ? 'Kiosk background'
-    : editor?.kind === 'remove' ? 'Remove from workspace'
-    : 'Add cue'
+  const title = editor?.kind === 'playlist' ? (editor.parent ? t('New nested playlist') : t('New playlist'))
+    : editor?.kind === 'rename' ? t(editor.existing.kind === 'playlist' ? 'Rename playlist' : 'Rename cue')
+    : editor?.kind === 'text' ? (editor.existing ? t('Edit text slide') : t('New one-off text slide'))
+    : editor?.kind === 'text-library' ? t('Text slide library')
+    : editor?.kind === 'new-slide-library' ? t('New slide library')
+    : editor?.kind === 'library-text' ? (editor.existing ? t('Edit saved text slide') : t('New text slide'))
+    : editor?.kind === 'scripture' ? (editor.existing ? t('Edit scripture cue') : t('Bible lookup'))
+    : editor?.kind === 'media' ? t('Add Media')
+    : editor?.kind === 'kiosk-background' ? t('Kiosk background')
+    : editor?.kind === 'remove' ? t('Remove from workspace')
+    : t('Add cue')
 
-  const sidebarAction = sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'
+  const sidebarAction = sidebarOpen ? t('Collapse sidebar') : t('Expand sidebar')
 
   return (
     <div className="studio-shell">
       <header className="appbar">
-        <div className="playlist-controls" role="group" aria-label="Workspace controls">
+        <div className="playlist-controls" role="group" aria-label={t('Workspace controls')}>
           <button type="button" className="icon-button" aria-label={sidebarAction} title={sidebarAction}
             aria-controls="studio-sidebar" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(open => !open)}>
             {sidebarOpen ? <PanelLeftClose size={17} aria-hidden="true" /> : <PanelLeftOpen size={17} aria-hidden="true" />}
           </button>
-          <Menu primary label="Add cue" trigger={<><Plus size={17} /> Add cue <ChevronDown size={15} /></>}>
+          <Menu primary label={t('Add cue')} trigger={<><Plus size={17} /> {t('Add cue')} <ChevronDown size={15} /></>}>
             {cueMenuItems(active.id)}
           </Menu>
-          <Menu label="Playlist actions" trigger={<Ellipsis size={19} />}>
-            <button onClick={() => setEditor({ kind: 'rename', parent: null, existing: active })}><Pencil size={15} /> Rename playlist</button>
-            <button className="danger" disabled={project.playlists.length < 2} onClick={() => setEditor({ kind: 'remove', parent: null, item: active })}><Trash2 size={15} /> Remove playlist</button>
+          <Menu label={t('Playlist actions')} trigger={<Ellipsis size={19} />}>
+            <button onClick={() => setEditor({ kind: 'rename', parent: null, existing: active })}><Pencil size={15} /> {t('Rename playlist')}</button>
+            <button className="danger" disabled={project.playlists.length < 2} onClick={() => setEditor({ kind: 'remove', parent: null, item: active })}><Trash2 size={15} /> {t('Remove playlist')}</button>
           </Menu>
         </div>
-        <div className="display-controls" role="group" aria-label="Kiosk controls">
+        <div className="display-controls" role="group" aria-label={t('Kiosk controls')}>
           <div className="display-select">
             <Monitor size={16} />
-            <select aria-label="Kiosk display" title={display ? `${display.width} × ${display.height}` : 'Audience display'} value={display?.id ?? ''} disabled={kiosk || displayBusy} onChange={event => {
+            <select aria-label={t('Kiosk display')} title={display ? `${display.width} × ${display.height}` : t('Audience display')} value={display?.id ?? ''} disabled={kiosk || displayBusy} onChange={event => {
               const displayId = event.target.value
               setProject(current => ({ ...current, displayId }))
             }}>
-              {!displayList.length && <option value="">No displays</option>}
+              {!displayList.length && <option value="">{t('No displays')}</option>}
               {displayList.map((monitor, i) => <option value={monitor.id} key={monitor.id}>
-                {desktop ? `Display ${i + 1} · ${monitor.name}${monitor.studio ? ' (Studio)' : ''}` : 'Display 1 · Preview'}
+                {desktop ? t(monitor.studio ? 'Display {number} · {name} (Studio)' : 'Display {number} · {name}', {
+                  number: i + 1, name: monitor.name === 'Unnamed display' ? t('Unnamed display') : monitor.name,
+                }) : t('Display 1 · Preview')}
               </option>)}
             </select>
             <ChevronDown size={13} />
           </div>
-          <button type="button" className="icon-button" aria-label="Kiosk background" title="Kiosk background"
+          <button type="button" className="icon-button" aria-label={t('Kiosk background')} title={t('Kiosk background')}
             onClick={() => setEditor({ kind: 'kiosk-background' })}><ImageIcon size={17} aria-hidden="true" /></button>
           <button className={`button kiosk-button${kiosk ? ' kiosk-button--open' : ''}`} onClick={() => void toggleKiosk()} disabled={!display || displayBusy}>
-            {kiosk ? <MonitorOff size={16} /> : <Play size={15} />} {kiosk ? 'Close Kiosk' : 'Launch Kiosk'}
+            {kiosk ? <MonitorOff size={16} /> : <Play size={15} />} {kiosk ? t('Close Kiosk') : t('Launch Kiosk')}
           </button>
-          <button type="button" className="icon-button settings-button" aria-label="Settings" title="Settings" aria-haspopup="dialog"
+          <button type="button" className="icon-button settings-button" aria-label={t('Settings')} title={t('Settings')} aria-haspopup="dialog"
             onClick={() => setEditor({ kind: 'settings' })}><Settings size={17} aria-hidden="true" /></button>
         </div>
       </header>
 
       <div className="workspace">
-        <aside id="studio-sidebar" className="sidebar" aria-label="Playlists, sources, and slides" hidden={!sidebarOpen}>
+        <aside id="studio-sidebar" className="sidebar" aria-label={t('Playlists, sources, and slides')} hidden={!sidebarOpen}>
           <div className="sidebar-content">
             <section className="sidebar-section">
-              <div className="sidebar-heading"><h2>Playlists</h2><button className="icon-button" title="New playlist" aria-label="New playlist" onClick={() => setEditor({ kind: 'playlist', parent: null })}><Plus size={17} /></button></div>
+              <div className="sidebar-heading"><h2>{t('Playlists')}</h2><button className="icon-button" title={t('New playlist')} aria-label={t('New playlist')} onClick={() => setEditor({ kind: 'playlist', parent: null })}><Plus size={17} /></button></div>
               {project.playlists.map(list => (
                 <button className={`sidebar-item playlist-link${active.id === list.id ? ' sidebar-item--active' : ''}`} key={list.id} onClick={() => selectPlaylist(list)} aria-current={active.id === list.id ? 'true' : undefined}>
                   <ListMusic size={17} /><span>{list.title}</span><span className="playlist-count">{flatten(list.children).length}</span>
@@ -541,34 +546,34 @@ export default function Studio() {
               ))}
             </section>
             <section className="sidebar-section">
-              <div className="sidebar-heading"><h2>Library</h2></div>
+              <div className="sidebar-heading"><h2>{t('Library')}</h2></div>
               {libraryItems.map(({ kind, label, shortcut, icon: Icon }) => (
                 <button type="button" key={kind} className="sidebar-item"
                   onClick={() => openEditor(kind, active.id)} aria-keyshortcuts={`Control+${shortcut}`}>
-                  <Icon size={17} aria-hidden="true" /><span>{label}</span>
+                  <Icon size={17} aria-hidden="true" /><span>{t(label)}</span>
                   <kbd className="cue-shortcut" aria-hidden="true">Ctrl+{shortcut}</kbd>
                 </button>
               ))}
             </section>
             <section className="sidebar-section sidebar-section--media-sources">
-              <div className="sidebar-heading"><h2>Media sources</h2><button className="icon-button" title="Add source folder" aria-label="Add source folder" onClick={addSourceFromSidebar}><Plus size={17} /></button></div>
+              <div className="sidebar-heading"><h2>{t('Media sources')}</h2><button className="icon-button" title={t('Add source folder')} aria-label={t('Add source folder')} onClick={addSourceFromSidebar}><Plus size={17} /></button></div>
               {project.sources.map(source => (
                 <div className="source-row" key={source.id}>
                   <div className="sidebar-item" title={source.path}><FolderOpen size={16} /><span>{source.name}</span></div>
-                  <button className="icon-button" title="Remove source folder" aria-label={`Remove source ${source.name}`} onClick={() => setProject(current => ({
+                  <button className="icon-button" title={t('Remove source folder')} aria-label={t('Remove source {name}', { name: source.name })} onClick={() => setProject(current => ({
                     ...current, sources: current.sources.filter(item => item.id !== source.id),
                   }))}><X size={14} /></button>
                 </div>
               ))}
-              {!project.sources.length && <button className="add-folder" onClick={addSourceFromSidebar}><FolderPlus size={16} /> Add a folder</button>}
+              {!project.sources.length && <button className="add-folder" onClick={addSourceFromSidebar}><FolderPlus size={16} /> {t('Add a folder')}</button>}
             </section>
             <section className="sidebar-section sidebar-section--slides" aria-labelledby="slide-libraries-heading">
               <div className="sidebar-heading">
-                <h2 id="slide-libraries-heading">Slides</h2>
-                <button type="button" className="icon-button" title="New slide library" aria-label="New slide library"
+                <h2 id="slide-libraries-heading">{t('Slides')}</h2>
+                <button type="button" className="icon-button" title={t('New slide library')} aria-label={t('New slide library')}
                   onClick={() => setEditor({ kind: 'new-slide-library', parent: active.id })}><Plus size={17} /></button>
               </div>
-              {[...project.slideLibraries].sort((a, b) => a.localeCompare(b)).map(folder => (
+              {[...project.slideLibraries].sort((a, b) => a.localeCompare(b, language)).map(folder => (
                 <button type="button" key={folder} className="sidebar-item" title={folder}
                   onClick={() => setEditor({ kind: 'text-library', parent: active.id, folder })}>
                   <FolderOpen size={17} aria-hidden="true" /><span>{folder}</span>
@@ -576,14 +581,14 @@ export default function Studio() {
               ))}
               {!project.slideLibraries.length && (
                 <button type="button" className="add-folder" onClick={() => setEditor({ kind: 'new-slide-library', parent: active.id })}>
-                  <FolderPlus size={16} aria-hidden="true" /> New library
+                  <FolderPlus size={16} aria-hidden="true" /> {t('New library')}
                 </button>
               )}
             </section>
           </div>
           <div className="sidebar-foot">
             <span className={`engine-light${kiosk ? ' engine-light--active' : ''}`} />
-            <span>{kiosk ? 'Kiosk connected' : 'Kiosk on standby'}</span>
+            <span>{kiosk ? t('Kiosk connected') : t('Kiosk on standby')}</span>
           </div>
         </aside>
 
@@ -603,11 +608,11 @@ export default function Studio() {
               onPlayback={action => void updateStage(controlPlayback(stage.revision, action))}
             />
 
-            {(saveError || stage.error) && <div className="problem" role="alert"><CircleAlert size={17} /> {saveError || stage.error}</div>}
+            {(saveError || stage.error) && <div className="problem" role="alert"><CircleAlert size={17} /> {translateError(t, saveError || stage.error || '')}</div>}
 
             <section className="cue-section" aria-labelledby="cues-heading">
               <header>
-                <h2 id="cues-heading">Cue list</h2>
+                <h2 id="cues-heading">{t('Cue list')}</h2>
               </header>
               <div className="cue-scroll">
                 <CueList root={active} selectedId={cueId} expanded={expanded}
@@ -632,8 +637,8 @@ export default function Studio() {
       </div>
 
       {notice && <div className={`toast${notice.error ? ' toast--error' : ''}`} role={notice.error ? 'alert' : 'status'}>
-        {notice.error ? <CircleAlert size={17} /> : <Monitor size={17} />}<span>{notice.text}</span>
-        <button className="icon-button" aria-label="Dismiss message" onClick={() => setNotice(null)}><X size={16} /></button>
+        {notice.error ? <CircleAlert size={17} /> : <Monitor size={17} />}<span>{translateError(t, notice.text)}</span>
+        <button className="icon-button" aria-label={t('Dismiss message')} onClick={() => setNotice(null)}><X size={16} /></button>
       </div>}
 
       {editor?.kind === 'settings' && <SettingsDialog onClose={() => setEditor(null)} />}
@@ -641,8 +646,8 @@ export default function Studio() {
         {editor.kind === 'choose' && <div className="add-cue-options">
           {cueMenuItems(editor.parent, 'button')}
         </div>}
-        {editor.kind === 'playlist' && <NameEditor label="Playlist name" action="Create playlist" onSave={name => addPlaylist(name, editor.parent)} />}
-        {editor.kind === 'rename' && <NameEditor label="Name" action="Save changes" existing={editor.existing} onSave={name => rename(editor.existing, editor.parent, name)} />}
+        {editor.kind === 'playlist' && <NameEditor label={t('Playlist name')} action={t('Create playlist')} onSave={name => addPlaylist(name, editor.parent)} />}
+        {editor.kind === 'rename' && <NameEditor label={t('Name')} action={t('Save changes')} existing={editor.existing} onSave={name => rename(editor.existing, editor.parent, name)} />}
         {editor.kind === 'text-library' && (
           <TextSlideLibrary items={project.textLibrary} libraries={project.slideLibraries} playlists={project.playlists} parent={editor.parent}
             selectedId={editor.selectedId} initialFolder={editor.folder} busy={transmitting}
@@ -656,7 +661,7 @@ export default function Studio() {
             onLive={item => sendTextSlide(copyLibraryTextSlide(item))} />
         )}
         {editor.kind === 'new-slide-library' && (
-          <NameEditor label="Library name" action="Create library" onSave={name => createSlideLibrary(editor.parent, name)} />
+          <NameEditor label={t('Library name')} action={t('Create library')} onSave={name => createSlideLibrary(editor.parent, name)} />
         )}
         {editor.kind === 'text' && (
           <TextEditor existing={editor.existing} busy={transmitting}
@@ -677,10 +682,12 @@ export default function Studio() {
         />}
         {editor.kind === 'kiosk-background' && <KioskBackgroundEditor background={background} loadError={backgroundError} />}
         {editor.kind === 'remove' && <div className="editor">
-          <p>Remove <strong>{editor.item.title}</strong>{editor.item.kind === 'text' ? ' and its slides' : editor.item.kind === 'playlist' && editor.item.children.length ? ' and its cues' : ''}?</p>
+          <p>{t(editor.item.kind === 'text' ? 'Remove “{name}” and its slides?'
+            : editor.item.kind === 'playlist' && editor.item.children.length ? 'Remove “{name}” and its cues?'
+            : 'Remove “{name}”?', { name: editor.item.title })}</p>
           <div className="dialog-actions">
-            <button className="button" onClick={() => setEditor(null)}>Cancel</button>
-            <button className="button button-danger" onClick={() => removeItem(editor.item, editor.parent)}>Remove</button>
+            <button className="button" onClick={() => setEditor(null)}>{t('Cancel')}</button>
+            <button className="button button-danger" onClick={() => removeItem(editor.item, editor.parent)}>{t('Remove')}</button>
           </div>
         </div>}
       </Dialog>}

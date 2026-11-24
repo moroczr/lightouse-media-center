@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { ArrowDown, ArrowLeft, ArrowUp, Folder, Plus, RadioTower, Trash2, X } from 'lucide-react'
+import { useLanguage } from '../shared/i18n'
+import { translateError, type Message } from '../shared/messages'
 import { kindNames, textCueTitle, type Item, type TextEntry, type TextSlide, type Theme } from '../shared/model'
 
 export function Dialog({ title, children, onClose, wide }: {
   title: string; children: ReactNode; onClose: () => void; wide?: boolean;
 }) {
+  const { t } = useLanguage()
   const ref = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
@@ -24,7 +27,7 @@ export function Dialog({ title, children, onClose, wide }: {
       <div className="dialog-body">
         <header className="dialog-header">
           <h2>{title}</h2>
-          <button type="button" className="icon-button" aria-label="Close dialog" onClick={onClose}><X size={19} /></button>
+          <button type="button" className="icon-button" aria-label={t('Close dialog')} onClick={onClose}><X size={19} /></button>
         </header>
         {children}
       </div>
@@ -32,21 +35,22 @@ export function Dialog({ title, children, onClose, wide }: {
   )
 }
 
-const themes: { value: Theme; label: string }[] = [
+const themes: { value: Theme; label: Message }[] = [
   { value: 'plain', label: 'Black' },
   { value: 'twilight', label: 'Twilight' },
   { value: 'violet', label: 'Violet' },
 ]
 
 export function ThemePicker({ value, onChange }: { value: Theme; onChange: (theme: Theme) => void }) {
+  const { t } = useLanguage()
   return (
     <fieldset className="theme-picker">
-      <legend>Background</legend>
+      <legend>{t('Background')}</legend>
       {themes.map(theme => (
         <label className={`theme-option${theme.value === value ? ' selected' : ''}`} key={theme.value}>
           <input type="radio" name="theme" value={theme.value} checked={theme.value === value} onChange={() => onChange(theme.value)} />
           <span className={`theme-swatch slide--${theme.value}`} />
-          {theme.label}
+          {t(theme.label)}
         </label>
       ))}
     </fieldset>
@@ -59,18 +63,19 @@ export function EditorActions({ editing, valid, onLive, showShortcuts }: {
   onLive?: () => void
   showShortcuts?: boolean
 }) {
+  const { t } = useLanguage()
   return (
     <div className="dialog-actions">
       {onLive && (
         <button type="button" className="button" disabled={!valid} onClick={onLive}
           aria-keyshortcuts={showShortcuts ? 'Control+Enter' : undefined}>
-          <RadioTower size={15} /> Send to Kiosk
+          <RadioTower size={15} /> {t('Send to Kiosk')}
           {showShortcuts && <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>}
         </button>
       )}
       <button className="button button-primary" disabled={!valid} type="submit"
         aria-keyshortcuts={showShortcuts ? 'Enter' : undefined}>
-        {editing ? 'Save changes' : 'Add to playlist'}
+        {editing ? t('Save changes') : t('Add to playlist')}
         {showShortcuts && <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>}
       </button>
     </div>
@@ -88,6 +93,7 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
     onBack: () => void
   }
 }) {
+  const { t } = useLanguage()
   const [id] = useState(() => existing?.id ?? crypto.randomUUID())
   const [caption, setCaption] = useState(existing?.captionFromFirstEntry ? '' : existing?.title ?? '')
   const [libraryError, setLibraryError] = useState('')
@@ -100,7 +106,7 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
   const slide: TextSlide = {
     id,
     kind: 'text',
-    title: explicitCaption || textCueTitle(entries[0]?.text ?? '') || kindNames.text,
+    title: explicitCaption || textCueTitle(entries[0]?.text ?? '') || t(kindNames.text),
     entries: entries.map(entry => ({ ...entry, text: entry.text.trim() })),
     theme,
     captionFromFirstEntry: captionFromFirstEntry || undefined,
@@ -144,29 +150,29 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
       {library && (
         <div className="text-library-context">
           <button type="button" className="button button-quiet" onClick={library.onBack}>
-            <ArrowLeft size={16} aria-hidden="true" /> Back to library
+            <ArrowLeft size={16} aria-hidden="true" /> {t('Back to library')}
           </button>
           <span><Folder size={15} aria-hidden="true" /> {library.folder}</span>
         </div>
       )}
       <label>
-        Caption (optional)
-        <input autoFocus value={caption} maxLength={100} placeholder="Uses the first text entry if blank"
+        {t('Caption (optional)')}
+        <input autoFocus value={caption} maxLength={100} placeholder={t('Uses the first text entry if blank')}
           onChange={event => setCaption(event.target.value)} />
       </label>
-      {libraryError && <p className="media-warning" role="alert">{libraryError}</p>}
+      {libraryError && <p className="media-warning" role="alert">{translateError(t, libraryError)}</p>}
       <ol className="text-entries">
         {entries.map((entry, index) => {
           const label = captionFromFirstEntry && index === 0
-            ? 'Caption text' : `Slide ${captionFromFirstEntry ? index : index + 1}`
+            ? t('Caption text') : t('Slide {number}', { number: captionFromFirstEntry ? index : index + 1 })
           return (
             <li className="text-entry" key={entry.id}>
               <div className="text-entry-header">
                 <label htmlFor={`text-entry-${entry.id}`}>{label}</label>
                 <div className="text-entry-actions">
-                  <button type="button" className="icon-button" aria-label={`Move ${label.toLowerCase()} up`} title="Move up" disabled={index === 0} onClick={() => moveEntry(index, -1)}><ArrowUp size={15} /></button>
-                  <button type="button" className="icon-button" aria-label={`Move ${label.toLowerCase()} down`} title="Move down" disabled={index === entries.length - 1} onClick={() => moveEntry(index, 1)}><ArrowDown size={15} /></button>
-                  <button type="button" className="icon-button" aria-label={`Remove ${label.toLowerCase()}`} title="Remove text entry" disabled={entries.length === 1} onClick={() => setEntries(current => current.filter(item => item.id !== entry.id))}><Trash2 size={15} /></button>
+                  <button type="button" className="icon-button" aria-label={t('Move {label} up', { label: label.toLowerCase() })} title={t('Move up')} disabled={index === 0} onClick={() => moveEntry(index, -1)}><ArrowUp size={15} /></button>
+                  <button type="button" className="icon-button" aria-label={t('Move {label} down', { label: label.toLowerCase() })} title={t('Move down')} disabled={index === entries.length - 1} onClick={() => moveEntry(index, 1)}><ArrowDown size={15} /></button>
+                  <button type="button" className="icon-button" aria-label={t('Remove {label}', { label: label.toLowerCase() })} title={t('Remove text entry')} disabled={entries.length === 1} onClick={() => setEntries(current => current.filter(item => item.id !== entry.id))}><Trash2 size={15} /></button>
                 </div>
               </div>
               <textarea id={`text-entry-${entry.id}`} rows={3} required maxLength={1600} value={entry.text}
@@ -185,14 +191,14 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
           )
         })}
       </ol>
-      <button type="button" className="button text-entry-add" onClick={addEntry}><Plus size={16} /> Add text entry</button>
+      <button type="button" className="button text-entry-add" onClick={addEntry}><Plus size={16} /> {t('Add text entry')}</button>
       <ThemePicker value={theme} onChange={setTheme} />
       <div className="dialog-actions">
         {onLive && <button type="button" className="button" disabled={!valid} aria-keyshortcuts="Control+Enter" onClick={() => onLive(slide)}>
-          <RadioTower size={15} aria-hidden="true" /> Send to Kiosk <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>
+          <RadioTower size={15} aria-hidden="true" /> {t('Send to Kiosk')} <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>
         </button>}
         <button type="submit" className="button button-primary" disabled={!valid} aria-keyshortcuts="Enter">
-          {onSave ? existing ? 'Save changes' : 'Add to playlist' : 'Save to library'}
+          {onSave ? existing ? t('Save changes') : t('Add to playlist') : t('Save to library')}
           <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>
         </button>
       </div>
@@ -206,6 +212,7 @@ export function NameEditor({ existing, onSave, action, label }: {
   action: string;
   label: string;
 }) {
+  const { t } = useLanguage()
   const [value, setValue] = useState(existing?.title ?? '')
   const [error, setError] = useState('')
   return (
@@ -219,7 +226,7 @@ export function NameEditor({ existing, onSave, action, label }: {
         <input value={value} maxLength={100} ref={element => { if (element) element.autofocus = true }}
           onChange={event => { setValue(event.target.value); setError('') }} />
       </label>
-      {error && <p className="media-warning" role="alert">{error}</p>}
+      {error && <p className="media-warning" role="alert">{translateError(t, error)}</p>}
       <div className="dialog-actions"><button className="button button-primary" disabled={!value.trim()}>{action}</button></div>
     </form>
   )

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Ban, ChevronLeft, ChevronRight, Monitor, Pause, Play, RadioTower, RotateCcw, RotateCw, Square, Volume2, VolumeX } from 'lucide-react'
+import { useLanguage } from '../shared/i18n'
+import { translateError } from '../shared/messages'
 import { Audience } from '../shared/Audience'
 import { adjacentVerses } from '../shared/bridge'
 import { clockTime, isMedia, type AudienceCue, type PlaybackAction, type Reference, type Stage } from '../shared/model'
@@ -31,6 +33,7 @@ function MediaPlayback({ stage, onAction }: {
   stage: Stage
   onAction: (action: PlaybackAction) => void
 }) {
+  const { t } = useLanguage()
   const timeline = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState<number | null>(null)
   const duration = stage.duration
@@ -50,13 +53,13 @@ function MediaPlayback({ stage, onAction }: {
   }, [onAction])
 
   return (
-    <div className="live-controls media-playback" role="group" aria-label="Media playback">
+    <div className="live-controls media-playback" role="group" aria-label={t('Media playback')}>
       <div className="media-playback-buttons">
-        <button className="icon-button" aria-label="Play media" title="Start or resume playback" disabled={stage.playing} onClick={() => onAction({ kind: 'play' })}><Play size={16} /></button>
-        <button className="icon-button" aria-label="Pause media" title="Pause playback" disabled={!stage.playing} onClick={() => onAction({ kind: 'pause' })}><Pause size={16} /></button>
-        <button className="icon-button" aria-label="Stop media" title="Stop and rewind" onClick={() => onAction({ kind: 'stop' })}><Square size={15} /></button>
-        <button className="button media-skip" aria-label="Back 10 seconds" title="Back 10 seconds" disabled={!canSeek} onClick={() => onAction({ kind: 'skip', seconds: -10 })}><RotateCcw size={15} /><span>10s</span></button>
-        <button className="button media-skip" aria-label="Forward 10 seconds" title="Forward 10 seconds" disabled={!canSeek} onClick={() => onAction({ kind: 'skip', seconds: 10 })}><RotateCw size={15} /><span>10s</span></button>
+        <button className="icon-button" aria-label={t('Play media')} title={t('Start or resume playback')} disabled={stage.playing} onClick={() => onAction({ kind: 'play' })}><Play size={16} /></button>
+        <button className="icon-button" aria-label={t('Pause media')} title={t('Pause playback')} disabled={!stage.playing} onClick={() => onAction({ kind: 'pause' })}><Pause size={16} /></button>
+        <button className="icon-button" aria-label={t('Stop media')} title={t('Stop and rewind')} onClick={() => onAction({ kind: 'stop' })}><Square size={15} /></button>
+        <button className="button media-skip" aria-label={t('Back 10 seconds')} title={t('Back 10 seconds')} disabled={!canSeek} onClick={() => onAction({ kind: 'skip', seconds: -10 })}><RotateCcw size={15} /><span>{t('10s')}</span></button>
+        <button className="button media-skip" aria-label={t('Forward 10 seconds')} title={t('Forward 10 seconds')} disabled={!canSeek} onClick={() => onAction({ kind: 'skip', seconds: 10 })}><RotateCw size={15} /><span>{t('10s')}</span></button>
       </div>
       <div className="media-scrubber">
         <span className="media-time">{clockTime(position)}</span>
@@ -69,8 +72,8 @@ function MediaPlayback({ stage, onAction }: {
           step={0.1}
           value={position}
           disabled={!canSeek}
-          aria-label="Playback position"
-          aria-valuetext={`${clockTime(position)} of ${clockTime(duration)}`}
+          aria-label={t('Playback position')}
+          aria-valuetext={t('{position} of {duration}', { position: clockTime(position), duration: clockTime(duration) })}
           onChange={event => setDraft(event.currentTarget.valueAsNumber)}
           onBlur={() => setDraft(null)}
         />
@@ -85,6 +88,7 @@ function VerseNavigation({ reference, busy, onSelect }: {
   busy: boolean
   onSelect: (verse: PassageVerse) => void
 }) {
+  const { t } = useLanguage()
   const { translation, book, chapter, verse } = reference
   const key = `${translation}/${book}/${chapter}/${verse}`
   const [result, setResult] = useState<{
@@ -104,14 +108,14 @@ function VerseNavigation({ reference, busy, onSelect }: {
   }, [translation, book, chapter, verse, key])
 
   return (
-    <div className="live-controls step-navigation" role="group" aria-label="Live verse navigation" aria-busy={!current}>
+    <div className="live-controls step-navigation" role="group" aria-label={t('Live verse navigation')} aria-busy={!current}>
       <button type="button" className="button" disabled={busy || !previous} onClick={() => previous && onSelect(previous)}>
-        <ChevronLeft size={16} aria-hidden="true" /> Previous verse
+        <ChevronLeft size={16} aria-hidden="true" /> {t('Previous verse')}
       </button>
       <button type="button" className="button" disabled={busy || !next} onClick={() => next && onSelect(next)}>
-        Next verse <ChevronRight size={16} aria-hidden="true" />
+        {t('Next verse')} <ChevronRight size={16} aria-hidden="true" />
       </button>
-      {current && !current.neighbors && <span role="status">Could not load adjacent verses.</span>}
+      {current && !current.neighbors && <span role="status">{t('Could not load adjacent verses.')}</span>}
     </div>
   )
 }
@@ -120,6 +124,7 @@ function KioskVolume({ stage, onAction }: {
   stage: Stage
   onAction: (action: PlaybackAction) => void
 }) {
+  const { t } = useLanguage()
   const [draft, setDraft] = useState<number | null>(null)
   const appliedVolume = Math.round(stage.volume * 100)
   const volume = draft ?? appliedVolume
@@ -129,7 +134,7 @@ function KioskVolume({ stage, onAction }: {
   }, [draft, appliedVolume])
 
   return (
-    <div className="media-audio" role="group" aria-label="Kiosk audio">
+    <div className="media-audio" role="group" aria-label={t('Kiosk audio')}>
       <span className="media-time">{volume}%</span>
       <div className="media-volume-track">
         <input
@@ -139,9 +144,9 @@ function KioskVolume({ stage, onAction }: {
           max={100}
           step={1}
           value={volume}
-          aria-label="Kiosk volume"
+          aria-label={t('Kiosk volume')}
           aria-orientation="vertical"
-          title="Kiosk volume"
+          title={t('Kiosk volume')}
           aria-valuetext={`${volume}%`}
           onChange={event => {
             const value = event.currentTarget.valueAsNumber
@@ -153,9 +158,9 @@ function KioskVolume({ stage, onAction }: {
       </div>
       <button
         className={`icon-button${stage.muted ? ' media-mute-active' : ''}`}
-        aria-label="Mute Kiosk audio"
+        aria-label={t('Mute Kiosk audio')}
         aria-pressed={stage.muted}
-        title={stage.muted ? 'Unmute Kiosk audio' : 'Mute Kiosk audio'}
+        title={stage.muted ? t('Unmute Kiosk audio') : t('Mute Kiosk audio')}
         onClick={() => onAction({ kind: 'mute', muted: !stage.muted })}
       >
         {stage.muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
@@ -165,6 +170,7 @@ function KioskVolume({ stage, onAction }: {
 }
 
 export function Preview(props: PreviewProps) {
+  const { t } = useLanguage()
   const { stage } = props
   const live = props.kiosk && !!stage.cue && !stage.blackout
   const media = isMedia(stage.cue)
@@ -176,15 +182,15 @@ export function Preview(props: PreviewProps) {
       <div className="preview-grid">
         <section className="preview-panel preview-panel--live" aria-labelledby="live-heading">
           <header className="preview-heading">
-            <h2 id="live-heading"><Monitor size={15} /> Live output</h2>
-            <span className={`status-pill${live ? ' status-pill--live' : ''}`}><span />{status}</span>
+            <h2 id="live-heading"><Monitor size={15} /> {t('Live output')}</h2>
+            <span className={`status-pill${live ? ' status-pill--live' : ''}`}><span />{t(status)}</span>
           </header>
           <div className="preview-screen">
             <Audience key={stage.revision} cue={audience} background={props.background} stage={props.kiosk ? stage : { ...stage, playing: false }} />
           </div>
           <div className="preview-caption">
-            <span>{stage.blackout ? 'Display is black' : audience?.title ?? (props.background ? 'Kiosk background' : 'No live cue')}</span>
-            {audience && !media && <span className="subtle">{stage.cue ? 'Audience view' : 'Standby preview'}</span>}
+            <span>{stage.blackout ? t('Display is black') : audience?.title ?? (props.background ? t('Kiosk background') : t('No live cue'))}</span>
+            {audience && !media && <span className="subtle">{stage.cue ? t('Audience view') : t('Standby preview')}</span>}
           </div>
         </section>
         {media && <MediaPlayback key={stage.revision} stage={stage} onAction={props.onPlayback} />}
@@ -192,35 +198,35 @@ export function Preview(props: PreviewProps) {
           <VerseNavigation reference={stage.cue.reference} busy={props.busy} onSelect={props.onNavigateVerse} />
         )}
         {props.textNavigation && (
-          <div className="live-controls step-navigation" role="group" aria-label="Live text slide navigation">
+          <div className="live-controls step-navigation" role="group" aria-label={t('Live text slide navigation')}>
             <button type="button" className="button" disabled={props.busy || props.textNavigation.index === 0}
-              onClick={() => props.textNavigation?.onMove(-1)}><ChevronLeft size={16} aria-hidden="true" /> Previous slide</button>
+              onClick={() => props.textNavigation?.onMove(-1)}><ChevronLeft size={16} aria-hidden="true" /> {t('Previous slide')}</button>
             <button type="button" className="button" disabled={props.busy || props.textNavigation.index + 1 === props.textNavigation.total}
-              onClick={() => props.textNavigation?.onMove(1)}>Next slide <ChevronRight size={16} aria-hidden="true" /></button>
+              onClick={() => props.textNavigation?.onMove(1)}>{t('Next slide')} <ChevronRight size={16} aria-hidden="true" /></button>
           </div>
         )}
         <section className="preview-panel preview-panel--next" aria-labelledby="next-heading">
           <header className="preview-heading">
-            <h2 id="next-heading"><ChevronRight size={17} /> Next up</h2>
-            {props.next && <span className="status-pill status-pill--next">Queued</span>}
+            <h2 id="next-heading"><ChevronRight size={17} /> {t('Next up')}</h2>
+            {props.next && <span className="status-pill status-pill--next">{t('Queued')}</span>}
           </header>
           <div className="preview-screen">
             <Audience key={props.next?.id ?? 'empty'} cue={props.next} />
-            {props.nextError && <div className="slide-empty slide-overlay" role="status">{props.nextError}</div>}
+            {props.nextError && <div className="slide-empty slide-overlay" role="status">{translateError(t, props.nextError)}</div>}
           </div>
           <div className="preview-caption">
-            <span>{props.nextTitle ?? 'No cue selected'}</span>
+            <span>{props.nextTitle ?? t('No cue selected')}</span>
             {props.next && <ItemIcon kind={props.next.kind} size={13} />}
           </div>
         </section>
         <KioskVolume stage={stage} onAction={props.onPlayback} />
       </div>
-      <div className="transport" role="group" aria-label="Cue controls">
+      <div className="transport" role="group" aria-label={t('Cue controls')}>
         <button type="button" className="button button-quiet transport-blackout" aria-pressed={stage.blackout}
-          onClick={props.onBlackout} title="Toggle blackout (B)"><Ban size={16} aria-hidden="true" /> Blackout</button>
-        <button className="button" disabled={!props.hasPrevious} onClick={props.onPrevious} title="Cue previous item (↑)"><ChevronLeft size={17} /> Previous</button>
-        <button className="button" disabled={!props.hasNext} onClick={props.onNext} title="Cue next item (↓)">Next <ChevronRight size={17} /></button>
-        <button className="button button-primary" disabled={!props.canGoLive || props.busy} onClick={props.onGoLive} title="Send the queued item to Kiosk (Enter)"><RadioTower size={17} /> Go live</button>
+          onClick={props.onBlackout} title={t('Toggle blackout (B)')}><Ban size={16} aria-hidden="true" /> {t('Blackout')}</button>
+        <button className="button" disabled={!props.hasPrevious} onClick={props.onPrevious} title={t('Cue previous item (↑)')}><ChevronLeft size={17} /> {t('Previous')}</button>
+        <button className="button" disabled={!props.hasNext} onClick={props.onNext} title={t('Cue next item (↓)')}>{t('Next')} <ChevronRight size={17} /></button>
+        <button className="button button-primary" disabled={!props.canGoLive || props.busy} onClick={props.onGoLive} title={t('Send the queued item to Kiosk (Enter)')}><RadioTower size={17} /> {t('Go live')}</button>
       </div>
     </>
   )

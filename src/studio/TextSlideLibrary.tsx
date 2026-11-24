@@ -1,5 +1,7 @@
 import { useRef, useState, type KeyboardEvent } from 'react'
 import { ChevronRight, Folder, FolderPlus, Pencil, Plus, RadioTower, Search } from 'lucide-react'
+import { useLanguage } from '../shared/i18n'
+import { translateError } from '../shared/messages'
 import { textSlideCues, type Group, type LibraryTextSlide } from '../shared/model'
 import { ItemIcon } from './CueList'
 
@@ -30,6 +32,7 @@ export function TextSlideLibrary({
   onAdd: (item: LibraryTextSlide, parent: string, root: string) => void
   onLive: (item: LibraryTextSlide) => void
 }) {
+  const { language, t } = useLanguage()
   const [folder, setFolder] = useState(() => items.find(item => item.slide.id === selectedId)?.folder ?? initialFolder ?? '')
   const [query, setQuery] = useState('')
   const [selection, setSelection] = useState(selectedId ? `slide:${selectedId}` : undefined)
@@ -41,11 +44,11 @@ export function TextSlideLibrary({
   const subfolders = search ? [] : [...new Set(libraries.flatMap(path => (
     path.startsWith(prefix) && path.length > prefix.length
       ? [path.slice(prefix.length).split('/', 1)[0]] : []
-  )))].sort((a, b) => a.localeCompare(b))
+  )))].sort((a, b) => a.localeCompare(b, language))
   const shown = items.filter(item => search
     ? (item.folder === folder || item.folder.startsWith(prefix))
       && `${item.folder}/${item.slide.title}`.toLocaleLowerCase().includes(search)
-    : item.folder === folder).sort((a, b) => a.slide.title.localeCompare(b.slide.title) || a.folder.localeCompare(b.folder))
+    : item.folder === folder).sort((a, b) => a.slide.title.localeCompare(b.slide.title, language) || a.folder.localeCompare(b.folder, language))
   const rows = [
     ...subfolders.map(name => ({ kind: 'folder', key: `folder:${prefix}${name}`, name, path: prefix + name } as const)),
     ...shown.map(item => ({ kind: 'slide', key: `slide:${item.slide.id}`, item } as const)),
@@ -105,27 +108,27 @@ export function TextSlideLibrary({
       <div className="text-library-toolbar">
         <label className="search-box">
           <Search size={17} aria-hidden="true" />
-          <input type="search" aria-label="Search saved text slides" placeholder={folder ? 'Search this library' : 'Search all libraries'} value={query}
+          <input type="search" aria-label={t('Search saved text slides')} placeholder={folder ? t('Search this library') : t('Search all libraries')} value={query}
             ref={element => {
               searchInput.current = element
               if (element) element.autofocus = true
             }} onChange={event => setQuery(event.target.value)} />
         </label>
-        <button type="button" className="button" onClick={onCreateOneOff}>One-off text slide</button>
+        <button type="button" className="button" onClick={onCreateOneOff}>{t('One-off text slide')}</button>
         {libraries.includes(folder) ? (
           <button type="button" className="button button-primary" onClick={() => onCreate(folder)}>
-            <Plus size={16} aria-hidden="true" /> New text slide
+            <Plus size={16} aria-hidden="true" /> {t('New text slide')}
           </button>
         ) : (
           <button type="button" className="button button-primary" onClick={onCreateLibrary}>
-            <FolderPlus size={16} aria-hidden="true" /> New library
+            <FolderPlus size={16} aria-hidden="true" /> {t('New library')}
           </button>
         )}
       </div>
 
-      <nav className="text-library-path" aria-label="Slide libraries">
+      <nav className="text-library-path" aria-label={t('Slide libraries')}>
         <button type="button" className="button button-quiet" aria-current={!folder ? 'location' : undefined}
-          onClick={() => openFolder('')}>Library</button>
+          onClick={() => openFolder('')}>{t('Library')}</button>
         {crumbs.map((part, index) => {
           const path = crumbs.slice(0, index + 1).join('/')
           return (
@@ -138,7 +141,7 @@ export function TextSlideLibrary({
         })}
       </nav>
 
-      <div className="media-results" role="region" aria-label="Saved text slides" aria-busy={saving}>
+      <div className="media-results" role="region" aria-label={t('Saved text slides')} aria-busy={saving}>
         {rows.length ? (
           <ul className="media-entries" ref={resultList}>
             {rows.map((row, index) => {
@@ -159,12 +162,12 @@ export function TextSlideLibrary({
                     }}>
                     {row.kind === 'folder' ? <>
                       <Folder size={22} aria-hidden="true" />
-                      <span className="media-result-text"><strong>{row.name}</strong><span>{libraries.includes(row.path) ? 'Library' : 'Folder'}</span></span>
+                      <span className="media-result-text"><strong>{row.name}</strong><span>{libraries.includes(row.path) ? t('Library') : t('Folder')}</span></span>
                       <ChevronRight size={16} aria-hidden="true" />
                     </> : <>
                       <ItemIcon kind="text" />
-                      <span className="media-result-text"><strong>{row.item.slide.title}</strong><span>{row.item.folder || 'Library'}</span></span>
-                      <span className="media-result-type">{count} {count === 1 ? 'slide' : 'slides'}</span>
+                      <span className="media-result-text"><strong>{row.item.slide.title}</strong><span>{row.item.folder || t('Library')}</span></span>
+                      <span className="media-result-type">{t(count === 1 ? '{count} slide' : '{count} slides', { count })}</span>
                     </>}
                   </button>
                 </li>
@@ -172,29 +175,29 @@ export function TextSlideLibrary({
             })}
           </ul>
         ) : (
-          <p className="media-empty" role="status">{search ? 'No text slides match your search.'
-            : libraries.length ? 'No saved text slides here.' : 'Create a library to save text slides.'}</p>
+          <p className="media-empty" role="status">{search ? t('No text slides match your search.')
+            : libraries.length ? t('No saved text slides here.') : t('Create a library to save text slides.')}</p>
         )}
       </div>
-      {saving && <p role="status">Saving text slide library…</p>}
-      {error && <p className="media-warning" role="alert">{error}</p>}
+      {saving && <p role="status">{t('Saving text slide library…')}</p>}
+      {error && <p className="media-warning" role="alert">{translateError(t, error)}</p>}
 
       <label>
-        Destination playlist
+        {t('Destination playlist')}
         <select value={target?.id ?? ''} onChange={event => setDestination(event.target.value)}>
           {destinations.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
         </select>
       </label>
       <div className="dialog-actions">
         <button type="button" className="button" disabled={!selected || busy} onClick={() => selected && onEdit(selected)}>
-          <Pencil size={15} aria-hidden="true" /> Edit
+          <Pencil size={15} aria-hidden="true" /> {t('Edit')}
         </button>
         <button type="button" className="button" disabled={!selected || busy} aria-keyshortcuts="Control+Enter" onClick={sendSelected}>
-          <RadioTower size={16} aria-hidden="true" /> Send to Kiosk <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>
+          <RadioTower size={16} aria-hidden="true" /> {t('Send to Kiosk')} <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>
         </button>
         <button type="button" className="button button-primary" disabled={!selected || !target || busy}
           aria-keyshortcuts="Enter" onClick={addSelected}>
-          <Plus size={17} aria-hidden="true" /> Add to playlist <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>
+          <Plus size={17} aria-hidden="true" /> {t('Add to playlist')} <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>
         </button>
       </div>
     </div>

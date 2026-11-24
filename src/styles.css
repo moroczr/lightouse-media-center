@@ -361,9 +361,12 @@ button.icon-button:disabled { opacity: .35; }
 .settings-tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
 .settings-tabs button {
   display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px;
-  border: 0; border-bottom: 2px solid var(--accent); background: transparent;
-  color: var(--accent); font-size: 13px; font-weight: 790;
+  border: 0; border-bottom: 2px solid transparent; background: transparent;
+  color: var(--muted); font-size: 13px; font-weight: 790;
 }
+.settings-tabs button:hover { color: var(--ink); }
+.settings-tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--accent); }
+.settings-actions { margin-top: 16px; }
 .bible-settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .bible-settings-heading h3 { margin: 0; font-size: 14px; font-weight: 800; }
 .bible-database-list {

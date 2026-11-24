@@ -504,14 +504,19 @@ pub fn load_kiosk_background(
 pub async fn pick_kiosk_background(
     window: WebviewWindow,
     app: AppHandle,
+    title: Option<String>,
+    filter_name: Option<String>,
 ) -> CommandResult<Option<KioskBackground>> {
     studio_only(&window)?;
     let Some(picked) = app
         .dialog()
         .file()
         .set_parent(&window)
-        .set_title("Choose the Kiosk background")
-        .add_filter("Images", BACKGROUND_EXTENSIONS)
+        .set_title(title.as_deref().unwrap_or("Choose the Kiosk background"))
+        .add_filter(
+            filter_name.as_deref().unwrap_or("Images"),
+            BACKGROUND_EXTENSIONS,
+        )
         .blocking_pick_file()
     else {
         return Ok(None);
@@ -575,13 +580,14 @@ pub async fn pick_folder(
     window: WebviewWindow,
     library: State<'_, Library>,
     app: AppHandle,
+    title: Option<String>,
 ) -> CommandResult<Option<Source>> {
     studio_only(&window)?;
     let Some(picked) = app
         .dialog()
         .file()
         .set_parent(&window)
-        .set_title("Add a media source")
+        .set_title(title.as_deref().unwrap_or("Add a media source"))
         .blocking_pick_folder()
     else {
         return Ok(None);
@@ -610,19 +616,25 @@ pub async fn pick_media(
     library: State<'_, Library>,
     app: AppHandle,
     kind: Option<String>,
+    title: Option<String>,
+    filter_name: Option<String>,
 ) -> CommandResult<Option<MediaFile>> {
     studio_only(&window)?;
     let mut dialog = app
         .dialog()
         .file()
         .set_parent(&window)
-        .set_title("Open a media file");
+        .set_title(title.as_deref().unwrap_or("Open a media file"));
     match kind.as_deref() {
-        Some("video") => dialog = dialog.add_filter("Video", VIDEO),
-        Some("audio") => dialog = dialog.add_filter("Audio", AUDIO),
+        Some("video") => {
+            dialog = dialog.add_filter(filter_name.as_deref().unwrap_or("Video"), VIDEO);
+        }
+        Some("audio") => {
+            dialog = dialog.add_filter(filter_name.as_deref().unwrap_or("Audio"), AUDIO);
+        }
         _ => {
             let media: Vec<_> = VIDEO.iter().chain(AUDIO).copied().collect();
-            dialog = dialog.add_filter("Audio and video", &media);
+            dialog = dialog.add_filter(filter_name.as_deref().unwrap_or("Audio and video"), &media);
         }
     }
     let Some(picked) = dialog.blocking_pick_file() else {

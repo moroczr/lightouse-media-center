@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import { BookOpen, ChevronDown, ChevronUp, Search } from 'lucide-react'
+import { useLanguage } from '../shared/i18n'
+import { translateError } from '../shared/messages'
 import { bible } from '../shared/bridge'
 import { type BibleSettings, type Book, type ScriptureCue, type Theme, type Verse } from '../shared/model'
 import {
@@ -9,7 +11,7 @@ import {
 import { canSearchVerseText } from '../shared/verseSearch'
 import { EditorActions, ThemePicker } from './Editors'
 
-const segmentLabels = { book: 'Bible books', chapter: 'Chapters', verse: 'Verses' }
+const segmentLabels = { book: 'Bible books', chapter: 'Chapters', verse: 'Verses' } as const
 
 type Draft = {
   text: string
@@ -27,6 +29,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
   onSave: (cue: ScriptureCue) => void;
   onLive: (cue: ScriptureCue) => void;
 }) {
+  const { t } = useLanguage()
   const initial = existing?.reference
   const [requestedTranslation, setTranslation] = useState(initial?.translation)
   const [settings, setSettings] = useState<BibleSettings>()
@@ -57,7 +60,7 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
   const translations = settings?.databases.filter(item => item.enabled) ?? []
   const translation = translations.find(item => item.id === (requestedTranslation ?? settings?.defaultId))?.id ?? ''
   const unavailable = settings && !translation
-    ? translations.length ? 'Choose an enabled translation to edit this cue.' : 'Enable a Bible database in Settings to look up verses.'
+    ? translations.length ? t('Choose an enabled translation to edit this cue.') : t('Enable a Bible database in Settings to look up verses.')
     : ''
   const books = bookList?.key === translation ? bookList : undefined
   const bookValues = books && 'values' in books ? books.values : undefined
@@ -353,20 +356,21 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
     submitCue(event.ctrlKey ? onLive : onSave)
   }
 
-  let status = 'Type a book name or abbreviation.'
-  if (!books) status = 'Loading Bible books…'
+  let status = t('Type a book name or abbreviation.')
+  if (!books) status = t('Loading Bible books…')
   else if (segment === 'chapter' && book) {
-    status = options.length ? `Choose a chapter of ${book.name}.` : `${book.name} has chapters 1–${book.chapters}.`
+    status = options.length ? t('Choose a chapter of {book}.', { book: book.name })
+      : t('{book} has chapters 1–{count}.', { book: book.name, count: book.chapters })
   } else if (segment === 'verse') {
-    status = !verses ? 'Loading verses…' : options.length ? 'Choose a verse.' : 'Verse not found.'
-  } else if (options.length) status = 'Choose a book to continue.'
-  else if (bookText) status = 'Book not found. Try a book name or abbreviation.'
+    status = !verses ? t('Loading verses…') : options.length ? t('Choose a verse.') : t('Verse not found.')
+  } else if (options.length) status = t('Choose a book to continue.')
+  else if (bookText) status = t('Book not found. Try a book name or abbreviation.')
 
   if (byText) {
-    if (!textKey) status = 'Enter a few letters or words from a verse.'
-    else if (!result) status = 'Searching verses…'
-    else if ('error' in result) status = result.error
-    else status = 'No matching verses. Try fewer words or a different phrase.'
+    if (!textKey) status = t('Enter a few letters or words from a verse.')
+    else if (!result) status = t('Searching verses…')
+    else if ('error' in result) status = translateError(t, result.error)
+    else status = t('No matching verses. Try fewer words or a different phrase.')
   }
 
   return (
@@ -377,10 +381,10 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
       <div className="scripture-toolbar">
         <div className="scripture-reference">
           <div className="scripture-search-heading">
-            <label htmlFor={`${listId}-input`}>{byText ? 'Verse text' : 'Reference'}</label>
-            <div className="scripture-modes" role="group" aria-label="Search by">
-              <button type="button" className="button button-quiet" aria-pressed={!byText} onClick={() => changeMode(false)}>Reference</button>
-              <button type="button" className="button button-quiet" aria-pressed={byText} onClick={() => changeMode(true)}>Verse text</button>
+            <label htmlFor={`${listId}-input`}>{byText ? t('Verse text') : t('Reference')}</label>
+            <div className="scripture-modes" role="group" aria-label={t('Search by')}>
+              <button type="button" className="button button-quiet" aria-pressed={!byText} onClick={() => changeMode(false)}>{t('Reference')}</button>
+              <button type="button" className="button button-quiet" aria-pressed={byText} onClick={() => changeMode(true)}>{t('Verse text')}</button>
             </div>
           </div>
           <div className="search-box">
@@ -394,13 +398,13 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
                 if (element) element.autofocus = true
               }}
               disabled={!translation} autoComplete="off" spellCheck={false} maxLength={byText ? 200 : 80}
-              value={byText ? query : text} placeholder={byText ? 'e.g. love your enemies' : `e.g. ${referenceExample} 2:24`}
+              value={byText ? query : text} placeholder={byText ? t('e.g. love your enemies') : t('e.g. {book} 2:24', { book: referenceExample })}
               onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); setActiveIndex(-1) }}
               onChange={byText ? event => setQuery(event.target.value) : changeReference}
               onKeyDown={byText ? textKeys : referenceKeys} />
           </div>
           {suggestionsOpen && (
-            <ul id={listId} className="scripture-suggestions" role="listbox" aria-label={segmentLabels[segment]}>
+            <ul id={listId} className="scripture-suggestions" role="listbox" aria-label={t(segmentLabels[segment])}>
               {options.map(option => (
                 <li key={option.id} id={`${listId}-${option.id}`} role="option" aria-selected={option === activeSuggestion}
                   ref={option === activeSuggestion ? activeOption : undefined}
@@ -412,12 +416,12 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
           )}
         </div>
         <label>
-          Translation
+          {t('Translation')}
           <span className="scripture-translation">
             <select value={translation} disabled={!translations.length}
               onChange={event => changeTranslation(event.target.value)}>
               {!translation && <option value="" disabled>
-                {translations.length ? 'Choose a translation' : settings ? 'No enabled translations' : translationError ? 'Translations unavailable' : 'Loading translations…'}
+                {translations.length ? t('Choose a translation') : settings ? t('No enabled translations') : translationError ? t('Translations unavailable') : t('Loading translations…')}
               </option>}
               {translations.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
             </select>
@@ -426,23 +430,23 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
         </label>
       </div>
       {selected ? (
-        <section className="verse-browser" aria-label="Verse results" onKeyDown={event => {
+        <section className="verse-browser" aria-label={t('Verse results')} onKeyDown={event => {
           if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
           event.preventDefault()
           moveVerse(event.key === 'ArrowUp' ? -1 : 1, event.target instanceof HTMLElement && event.target.closest('.verse-result') !== null)
         }}>
           <header className="verse-browser-header">
             <p aria-live="polite"><BookOpen size={17} aria-hidden="true" /><strong>{title}</strong></p>
-            <div role="group" aria-label={byText ? 'Navigate matches' : 'Navigate verses'}>
-              <button type="button" className="icon-button" aria-label={byText ? 'Previous match' : 'Move up one verse'}
-                title={byText ? 'Previous match (↑)' : 'Previous verse (↑)'}
+            <div role="group" aria-label={byText ? t('Navigate matches') : t('Navigate verses')}>
+              <button type="button" className="icon-button" aria-label={byText ? t('Previous match') : t('Move up one verse')}
+                title={byText ? t('Previous match (↑)') : t('Previous verse (↑)')}
                 disabled={!previousVerse || !canNavigate} onClick={() => moveVerse(-1)}><ChevronUp size={17} aria-hidden="true" /></button>
-              <button type="button" className="icon-button" aria-label={byText ? 'Next match' : 'Move down one verse'}
-                title={byText ? 'Next match (↓)' : 'Next verse (↓)'}
+              <button type="button" className="icon-button" aria-label={byText ? t('Next match') : t('Move down one verse')}
+                title={byText ? t('Next match (↓)') : t('Next verse (↓)')}
                 disabled={!nextVerse || !canNavigate} onClick={() => moveVerse(1)}><ChevronDown size={17} aria-hidden="true" /></button>
             </div>
           </header>
-          <ul className="verse-results" ref={verseResults} aria-label={byText ? 'Matching verses' : 'Verses'} aria-busy={!canNavigate}>
+          <ul className="verse-results" ref={verseResults} aria-label={byText ? t('Matching verses') : t('Verses')} aria-busy={!canNavigate}>
             {visible.map(verse => {
               const label = verseLabel(verse)
               return <li key={label}>
@@ -458,11 +462,11 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
               </li>
             })}
           </ul>
-          {!byText && currentWindow?.incomplete && <p className="verse-browser-error" role="status">Some nearby verses could not be loaded.</p>}
+          {!byText && currentWindow?.incomplete && <p className="verse-browser-error" role="status">{t('Some nearby verses could not be loaded.')}</p>}
         </section>
       ) : (
         <div className="verse-preview" aria-live="polite">
-          <BookOpen size={17} aria-hidden="true" /><span>{unavailable || error || status}</span>
+          <BookOpen size={17} aria-hidden="true" /><span>{unavailable || (error ? translateError(t, error) : status)}</span>
         </div>
       )}
       <ThemePicker value={theme} onChange={setTheme} />

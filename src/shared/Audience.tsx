@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Monitor, Music2, Video } from 'lucide-react'
+import { useLanguage } from './i18n'
 import { getStage, listenStage, reportPlayback } from './bridge'
 import { emptyStage, isMedia, type AudienceCue, type Stage } from './model'
 
@@ -88,6 +89,7 @@ interface AudienceProps {
 }
 
 export function Audience({ cue, stage, background, output = false }: AudienceProps) {
+  const { t } = useLanguage()
   const media = useRef<HTMLMediaElement | null>(null)
   const lastReport = useRef(0)
   const initialized = useRef(false)
@@ -190,12 +192,12 @@ export function Audience({ cue, stage, background, output = false }: AudiencePro
   return (
     <div className={`audience${output ? ' audience--output' : ''}`}>
       {!cue && background && <img className="audience-background" src={background} alt="" />}
-      {!cue && !background && !output && <div className="slide-empty"><Monitor size={24} /><span>No cue selected</span></div>}
+      {!cue && !background && !output && <div className="slide-empty"><Monitor size={24} /><span>{t('No cue selected')}</span></div>}
       {cue && !isMedia(cue) && <SlideText cue={cue} />}
       {cue?.kind === 'video' && (
         <>
           <video {...mediaProps} src={cue.url} muted={!output || muted} playsInline />
-          {previewError && !output && <div className="slide-empty slide-overlay"><Video size={24} /><span>Preview unavailable</span></div>}
+          {previewError && !output && <div className="slide-empty slide-overlay"><Video size={24} /><span>{t('Preview unavailable')}</span></div>}
         </>
       )}
       {cue?.kind === 'audio' && (output

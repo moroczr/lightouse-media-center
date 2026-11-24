@@ -3,6 +3,7 @@ import {
   ArrowDown, ArrowUp, BookOpen, ChevronDown, ChevronRight, Clapperboard,
   Ellipsis, Folder, ListMusic, Music2, Pencil, Plus, Trash2, Type,
 } from 'lucide-react'
+import { useLanguage } from '../shared/i18n'
 import { flatten, kindNames, textSlideCues, type Cue, type Group, type Item, type ItemKind } from '../shared/model'
 
 export const itemIcons = {
@@ -125,6 +126,7 @@ function CueRow({ item, depth, subtitle, cues, props, children }: {
   props: CueListProps
   children?: ReactNode
 }) {
+  const { t } = useLanguage()
   const open = !!cues && props.expanded.has(item.id)
   const cueId = cues ? cues[0]?.id : item.id
   const contains = (id: string | null) => item.id === id || (!open && cues?.some(cue => cue.id === id))
@@ -134,14 +136,14 @@ function CueRow({ item, depth, subtitle, cues, props, children }: {
   return (
     <div className={`cue-row${current ? ' cue-row--current' : ''}${next ? ' cue-row--next' : ''}`} style={{ '--depth': depth } as React.CSSProperties}>
       {cues ? (
-        <button className="cue-expand" aria-expanded={open} aria-label={`${open ? 'Collapse' : 'Expand'} ${item.title}`} onClick={() => props.onToggle(item.id)}>
+        <button className="cue-expand" aria-expanded={open} aria-label={t(open ? 'Collapse {name}' : 'Expand {name}', { name: item.title })} onClick={() => props.onToggle(item.id)}>
           {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
         </button>
       ) : <span className="cue-rail" />}
       <button
         className="cue-select"
         aria-current={current ? true : undefined}
-        title={cueId ? `Cue ${item.title} (double-click to go live)` : `Cue ${item.title}`}
+        title={t(cueId ? 'Cue {name} (double-click to go live)' : 'Cue {name}', { name: item.title })}
         onClick={() => props.onCue(cueId, cues ? item.id : undefined)}
         onDoubleClick={cueId ? () => props.onGoLive(cueId) : undefined}
       >
@@ -149,41 +151,42 @@ function CueRow({ item, depth, subtitle, cues, props, children }: {
         <span className="cue-title">{item.title}</span>
         {subtitle && <span className="cue-kind">{subtitle}</span>}
       </button>
-      {current && <span className="cue-badge current">{current.status}</span>}
-      {next && <span className="cue-badge next">Next</span>}
+      {current && <span className="cue-badge current">{t(current.status)}</span>}
+      {next && <span className="cue-badge next">{t('Next')}</span>}
       {children}
     </div>
   )
 }
 
 function GroupRows({ group, depth, props }: { group: Group; depth: number; props: CueListProps }) {
+  const { t } = useLanguage()
   return (
     <ul className="cue-rows">
       {group.children.map((item, index) => {
         const cues = item.kind === 'playlist' ? flatten(item.children)
           : item.kind === 'text' ? textSlideCues(item) : undefined
         const count = cues?.length ?? 0
-        const subtitle = item.kind === 'text' ? `${count} ${count === 1 ? 'slide' : 'slides'}`
-          : item.kind === 'playlist' ? `${count} ${count === 1 ? 'cue' : 'cues'}`
-          : kindNames[item.kind]
+        const subtitle = item.kind === 'text' ? t(count === 1 ? '{count} slide' : '{count} slides', { count })
+          : item.kind === 'playlist' ? t(count === 1 ? '{count} cue' : '{count} cues', { count })
+          : t(kindNames[item.kind])
         const open = props.expanded.has(item.id)
 
         return (
           <li key={item.id}>
             <CueRow item={item} depth={depth} subtitle={subtitle} cues={cues} props={props}>
-              <Menu label={`Actions for ${item.title}`} trigger={<Ellipsis size={17} />}>
-                {item.kind === 'playlist' && <button onClick={() => props.onAdd(item.id)}><Plus size={15} /> Add cue here</button>}
-                <button onClick={() => props.onEdit(item, group.id)}><Pencil size={14} /> {item.kind === 'text' ? 'Edit text slide' : item.kind === 'scripture' ? 'Edit cue' : 'Rename'}</button>
-                <button disabled={index === 0} onClick={() => props.onMove(group.id, index, -1)}><ArrowUp size={15} /> Move up</button>
-                <button disabled={index === group.children.length - 1} onClick={() => props.onMove(group.id, index, 1)}><ArrowDown size={15} /> Move down</button>
-                <button className="danger" onClick={() => props.onRemove(item, group.id)}><Trash2 size={14} /> Remove</button>
+              <Menu label={t('Actions for {name}', { name: item.title })} trigger={<Ellipsis size={17} />}>
+                {item.kind === 'playlist' && <button onClick={() => props.onAdd(item.id)}><Plus size={15} /> {t('Add cue here')}</button>}
+                <button onClick={() => props.onEdit(item, group.id)}><Pencil size={14} /> {item.kind === 'text' ? t('Edit text slide') : item.kind === 'scripture' ? t('Edit cue') : t('Rename')}</button>
+                <button disabled={index === 0} onClick={() => props.onMove(group.id, index, -1)}><ArrowUp size={15} /> {t('Move up')}</button>
+                <button disabled={index === group.children.length - 1} onClick={() => props.onMove(group.id, index, 1)}><ArrowDown size={15} /> {t('Move down')}</button>
+                <button className="danger" onClick={() => props.onRemove(item, group.id)}><Trash2 size={14} /> {t('Remove')}</button>
               </Menu>
             </CueRow>
             {item.kind === 'playlist' && open && (item.children.length
               ? <GroupRows group={item} depth={depth + 1} props={props} />
-              : <button className="empty-group" style={{ marginLeft: 48 + depth * 23 }} onClick={() => props.onAdd(item.id)}><Plus size={14} /> Add a cue to {item.title}</button>)}
+              : <button className="empty-group" style={{ marginLeft: 48 + depth * 23 }} onClick={() => props.onAdd(item.id)}><Plus size={14} /> {t('Add a cue to {name}', { name: item.title })}</button>)}
             {item.kind === 'text' && open && (
-              <ul className="cue-rows" aria-label={`Slides in ${item.title}`}>
+              <ul className="cue-rows" aria-label={t('Slides in {name}', { name: item.title })}>
                 {cues?.map(entry => <li key={entry.id}><CueRow item={entry} depth={depth + 1} props={props} /></li>)}
               </ul>
             )}
@@ -195,8 +198,9 @@ function GroupRows({ group, depth, props }: { group: Group; depth: number; props
 }
 
 export function CueList(props: CueListProps) {
+  const { t } = useLanguage()
   if (!props.root.children.length) {
-    return <div className="empty-list"><ListMusic size={27} /><p>This playlist is empty</p><button className="button" onClick={() => props.onAdd(props.root.id)}><Plus size={16} /> Add cue</button></div>
+    return <div className="empty-list"><ListMusic size={27} /><p>{t('This playlist is empty')}</p><button className="button" onClick={() => props.onAdd(props.root.id)}><Plus size={16} /> {t('Add cue')}</button></div>
   }
   return <GroupRows group={props.root} depth={0} props={props} />
 }

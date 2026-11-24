@@ -6,9 +6,18 @@ import {
   type Reference, type SavedProject, type Source, type Stage, type Verse, emptyStage, isMedia, normalizeProject,
 } from './model'
 import { formatScriptureCue, readAdjacentVerses, verseLabel } from './scripture'
+import { readLanguage, translate, type Message } from './messages'
 import { createVerseSearch, type BibleVerseRow } from './verseSearch'
 
 export const desktop = isTauri()
+function dialogLabels(title: Message, filter?: Message) {
+  const language = readLanguage()
+  return {
+    title: translate(language, title),
+    filterName: filter ? translate(language, filter) : undefined,
+  }
+}
+
 const projectKey = 'lighthouse-project-v1'
 const backgroundKey = 'nemesa-kiosk-background'
 const backgroundEvent = 'kiosk-background-updated'
@@ -39,7 +48,7 @@ export const bible = {
     ? invoke<BibleSettings>('save_bible_settings', { preferences })
     : saveBrowserBibleSettings(preferences),
   importFile: async () => {
-    if (desktop) return invoke<BibleSettings | null>('import_bible')
+    if (desktop) return invoke<BibleSettings | null>('import_bible', dialogLabels('Add a Bible database', 'Bible databases'))
     const [file] = await fileInput('.json')
     return file ? importBrowserBible(file) : null
   },
@@ -300,7 +309,7 @@ function fileInput(accept: string, folder = false): Promise<File[]> {
 }
 
 export async function pickKioskBackground(): Promise<KioskBackground | null> {
-  if (desktop) return invoke('pick_kiosk_background')
+  if (desktop) return invoke('pick_kiosk_background', dialogLabels('Choose the Kiosk background', 'Images'))
   const [file] = await fileInput('image/png,image/jpeg,image/webp')
   if (!file) return null
   if (file.size > 10 * 1024 * 1024) throw new Error('Choose an image smaller than 10 MB.')
@@ -330,7 +339,10 @@ function registerFile(file: File, scope: string): MediaFile | null {
 }
 
 export async function pickMedia(kind?: 'audio' | 'video') {
-  if (desktop) return invoke<MediaFile | null>('pick_media', { kind })
+  if (desktop) {
+    const filter = kind === 'audio' ? 'Audio' : kind === 'video' ? 'Video' : 'Audio and video'
+    return invoke<MediaFile | null>('pick_media', { kind, ...dialogLabels('Open a media file', filter) })
+  }
   const accept = kind === 'audio' ? audioExtensions : kind === 'video' ? videoExtensions : `${videoExtensions},${audioExtensions}`
   const [file] = await fileInput(accept)
   const item = file ? registerFile(file, crypto.randomUUID()) : null
@@ -339,7 +351,7 @@ export async function pickMedia(kind?: 'audio' | 'video') {
 }
 
 export async function pickFolder() {
-  if (desktop) return invoke<Source | null>('pick_folder')
+  if (desktop) return invoke<Source | null>('pick_folder', dialogLabels('Add a media source'))
   const files = await fileInput('', true)
   if (!files.length) return null
   const name = files[0].webkitRelativePath.split('/')[0]
