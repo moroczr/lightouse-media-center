@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState, type ComponentPropsWithoutRef, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from 'react'
 import { ArrowDown, ArrowLeft, ArrowUp, Folder, Plus, RadioTower, Trash2, X } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError } from '../shared/messages'
-import { builtInSlideDefaults, builtInThemes, kindNames, textCueTitle, type Item, type TextEntry, type TextSlide, type Theme } from '../shared/model'
+import { builtInSlideDefaults, builtInThemes, kindNames, textCueTitle, type TextEntry, type TextSlide, type Theme } from '../shared/model'
 import { ThemePreview, ThemeSwatch, useSlideThemes } from '../shared/SlideThemes'
 
-export function Dialog({ title, children, onClose }: {
-  title: string; children: ReactNode; onClose: () => void;
+export function Dialog({ title, children, onClose, className = '' }: {
+  title: string; children: ReactNode; onClose: () => void; className?: string;
 }) {
   const { t } = useLanguage()
   const ref = useRef<HTMLDialogElement>(null)
@@ -19,7 +19,7 @@ export function Dialog({ title, children, onClose }: {
 
   return (
     <dialog
-      className="dialog"
+      className={`dialog ${className}`}
       ref={ref}
       aria-label={title}
       onCancel={event => { event.preventDefault(); onClose() }}
@@ -73,36 +73,60 @@ export function ThemePicker({ value, onChange }: { value: Theme; onChange: (them
   )
 }
 
-export function EditorActions({ editing, valid, onLive, showShortcuts }: {
+export function AddToPlaylistButton({ disabled, type = 'button', onClick, showShortcut = true }: {
+  disabled: boolean
+  type?: 'button' | 'submit'
+  onClick?: () => void
+  showShortcut?: boolean
+}) {
+  const { t } = useLanguage()
+  return (
+    <button type={type} className="button button-primary" disabled={disabled} onClick={onClick}
+      aria-keyshortcuts={showShortcut ? 'Enter' : undefined}>
+      <Plus size={17} aria-hidden="true" /> {t('Add to playlist')}
+      {showShortcut && <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>}
+    </button>
+  )
+}
+
+export function SendToKioskButton({ name, disabled, onClick }: {
+  name: string
+  disabled: boolean
+  onClick: () => void
+}) {
+  const { t } = useLanguage()
+  const label = t('Send {name} to Kiosk', { name })
+  return (
+    <button type="button" className="icon-button result-send" disabled={disabled}
+      title={label} aria-label={label} aria-keyshortcuts="Control+Enter" onClick={onClick}>
+      <RadioTower size={15} aria-hidden="true" />
+    </button>
+  )
+}
+
+export function EditorActions({ editing, valid, showShortcuts }: {
   editing?: boolean
   valid: boolean
-  onLive?: () => void
   showShortcuts?: boolean
 }) {
   const { t } = useLanguage()
   return (
     <div className="dialog-actions">
-      {onLive && (
-        <button type="button" className="button" disabled={!valid} onClick={onLive}
-          aria-keyshortcuts={showShortcuts ? 'Control+Enter' : undefined}>
-          <RadioTower size={15} /> {t('Send to Kiosk')}
-          {showShortcuts && <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>}
+      {editing ? (
+        <button className="button button-primary" disabled={!valid} type="submit"
+          aria-keyshortcuts={showShortcuts ? 'Enter' : undefined}>
+          {t('Save changes')}
+          {showShortcuts && <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>}
         </button>
-      )}
-      <button className="button button-primary" disabled={!valid} type="submit"
-        aria-keyshortcuts={showShortcuts ? 'Enter' : undefined}>
-        {editing ? t('Save changes') : t('Add to playlist')}
-        {showShortcuts && <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>}
-      </button>
+      ) : <AddToPlaylistButton disabled={!valid} type="submit" showShortcut={!!showShortcuts} />}
     </div>
   )
 }
 
-export function TextEditor({ existing, onSave, onLive, library, busy = false }: {
+export function TextEditor({ existing, onSave, library, busy = false }: {
   existing?: TextSlide
   busy?: boolean
   onSave?: (slide: TextSlide) => void
-  onLive?: (slide: TextSlide) => void
   library?: {
     folder: string
     onSave: (slide: TextSlide) => string | undefined
@@ -137,13 +161,6 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
     if (library && valid) setLibraryError(library.onSave(slide) ?? '')
   }
 
-  function liveShortcut(event: KeyboardEvent<HTMLFormElement>) {
-    if (!onLive || event.key !== 'Enter' || !event.ctrlKey || event.shiftKey || event.altKey || event.metaKey
-      || event.defaultPrevented || event.nativeEvent.isComposing) return
-    event.preventDefault()
-    if (valid && !event.repeat) onLive(slide)
-  }
-
   function addEntry() {
     const id = crypto.randomUUID()
     entryToFocus.current = id
@@ -162,19 +179,18 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
   }
 
   return (
-    <EditorForm onKeyDown={liveShortcut} onSubmit={event => {
+    <EditorForm onSubmit={event => {
       event.preventDefault()
       if (onSave && valid) onSave(slide)
       else if (!onSave) saveToLibrary()
     }} actions={
       <div className="dialog-actions">
-        {onLive && <button type="button" className="button" disabled={!valid} aria-keyshortcuts="Control+Enter" onClick={() => onLive(slide)}>
-          <RadioTower size={15} aria-hidden="true" /> {t('Send to Kiosk')} <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>
-        </button>}
-        <button type="submit" className="button button-primary" disabled={!valid} aria-keyshortcuts="Enter">
-          {onSave ? existing ? t('Save changes') : t('Add to playlist') : t('Save to library')}
-          <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>
-        </button>
+        {onSave && !existing ? <AddToPlaylistButton disabled={!valid} type="submit" /> : (
+          <button type="submit" className="button button-primary" disabled={!valid} aria-keyshortcuts="Enter">
+            {onSave ? t('Save changes') : t('Save to library')}
+            <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>
+          </button>
+        )}
       </div>
     }>
       {library && (
@@ -227,14 +243,14 @@ export function TextEditor({ existing, onSave, onLive, library, busy = false }: 
   )
 }
 
-export function NameEditor({ existing, onSave, action, label }: {
-  existing?: Item;
+export function NameEditor({ initialValue = '', onSave, action, label }: {
+  initialValue?: string;
   onSave: (name: string) => string | void;
   action: string;
   label: string;
 }) {
   const { t } = useLanguage()
-  const [value, setValue] = useState(existing?.title ?? '')
+  const [value, setValue] = useState(initialValue)
   const [error, setError] = useState('')
   return (
     <form className="editor" onSubmit={event => {

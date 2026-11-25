@@ -10,7 +10,7 @@ import {
 } from '../shared/scripture'
 import { useSlideThemes } from '../shared/SlideThemes'
 import { canSearchVerseText } from '../shared/verseSearch'
-import { EditorActions, EditorForm, ThemePicker } from './Editors'
+import { EditorActions, EditorForm, SendToKioskButton, ThemePicker } from './Editors'
 
 const segmentLabels = { book: 'Bible books', chapter: 'Chapters', verse: 'Verses' } as const
 
@@ -24,13 +24,14 @@ type Navigation = { search: PassageVerse; start: PassageVerse; selected: Passage
 type VerseWindow = Awaited<ReturnType<typeof readVerseWindow>>
 type LoadResult<T> = { key: string; values: T[] } | { key: string; error: string }
 
-export function ScriptureEditor({ existing, active, settingsRevision, busy, onSave, onLive }: {
+export function ScriptureEditor({ existing, active, settingsRevision, busy, onSave, onLive, pickOnly = false }: {
   existing?: ScriptureCue;
   active: boolean;
   settingsRevision: number;
   busy: boolean;
-  onSave: (cue: ScriptureCue) => void;
-  onLive: (cue: ScriptureCue) => void;
+  onSave?: (cue: ScriptureCue) => void;
+  onLive?: (cue: ScriptureCue) => void;
+  pickOnly?: boolean;
 }) {
   const { t } = useLanguage()
   const { settings: slideSettings, error: themeError } = useSlideThemes()
@@ -348,11 +349,11 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
     inputRef.current?.focus()
   }
 
-  function submitCue(action: (cue: ScriptureCue) => void) {
-    if (busy || !selected || !themeReady) return
+  function submitCue(action: (cue: ScriptureCue) => void, verse = selected) {
+    if (busy || !verse || !themeReady) return
     action({
-      id: existing?.id ?? crypto.randomUUID(), title, kind: 'scripture', theme,
-      reference: { translation, book: selected.book.id, chapter: selected.chapter, verse: selected.verse },
+      id: existing?.id ?? crypto.randomUUID(), title: verseLabel(verse), kind: 'scripture', theme,
+      reference: { translation, book: verse.book.id, chapter: verse.chapter, verse: verse.verse },
     })
   }
 
@@ -363,8 +364,8 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
     const onVerse = target === inputRef.current || (target instanceof HTMLElement && target.closest('.verse-result'))
     if (!onVerse && !event.ctrlKey) return
     event.preventDefault()
-    if (event.repeat || (event.ctrlKey && existing)) return
-    submitCue(event.ctrlKey ? onLive : onSave)
+    const action = event.ctrlKey ? (existing ? undefined : onLive) : onSave
+    if (action && !event.repeat) submitCue(action)
   }
 
   let status = t('Type a book name or abbreviation.')
@@ -387,10 +388,9 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
   return (
     <EditorForm className="scripture-editor-form" onKeyDown={actionKeys} onSubmit={event => {
       event.preventDefault()
-      submitCue(onSave)
+      if (onSave) submitCue(onSave)
     }} actions={
-      <EditorActions editing={!!existing} valid={!!selected && !busy && themeReady} showShortcuts
-        onLive={existing ? undefined : () => submitCue(onLive)} />
+      onSave && <EditorActions editing={!!existing} valid={!!selected && !busy && themeReady} showShortcuts />
     }>
       <div className="scripture-toolbar">
         <div className="scripture-reference">
@@ -447,7 +447,7 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
         <section className="verse-browser" aria-label={t('Verse results')} onKeyDown={event => {
           if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
           event.preventDefault()
-          moveVerse(event.key === 'ArrowUp' ? -1 : 1, event.target instanceof HTMLElement && event.target.closest('.verse-result') !== null)
+          moveVerse(event.key === 'ArrowUp' ? -1 : 1, event.target instanceof HTMLElement && event.target.closest('.verse-result, .result-send') !== null)
         }}>
           <header className="verse-browser-header">
             <p aria-live="polite"><BookOpen size={17} aria-hidden="true" /><strong>{title}</strong></p>
@@ -463,16 +463,17 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
           <ul className="verse-results" ref={verseResults} aria-label={byText ? t('Matching verses') : t('Verses')} aria-busy={!canNavigate}>
             {visible.map(verse => {
               const label = verseLabel(verse)
-              return <li key={label}>
+              return <li key={label} className={onLive ? 'result-with-send' : undefined}
+                onFocus={() => { if (label !== title) selectVerse(verse) }}>
                 <button type="button" className="verse-result" aria-pressed={label === title}
                   ref={label === title ? selectedRow : undefined}
-                  onFocus={() => { if (label !== title) selectVerse(verse) }}
                   onClick={event => {
                     event.currentTarget.focus({ preventScroll: true })
                     selectVerse(verse)
                   }}>
                   <strong>{label}</strong><span>{verse.text}</span>
                 </button>
+                {onLive && <SendToKioskButton name={label} disabled={busy || !themeReady} onClick={() => submitCue(onLive, verse)} />}
               </li>
             })}
           </ul>
@@ -483,7 +484,7 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
           <BookOpen size={17} aria-hidden="true" /><span>{unavailable || (error ? translateError(t, error) : status)}</span>
         </div>
       )}
-      <ThemePicker value={theme} onChange={setTheme} />
+      {!pickOnly && <ThemePicker value={theme} onChange={setTheme} />}
     </EditorForm>
   )
 }

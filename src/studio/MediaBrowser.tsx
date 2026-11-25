@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { Check, CircleAlert, FolderOpen, FolderPlus, LayoutGrid, List, Plus, RadioTower, Search } from 'lucide-react'
+import { Check, ChevronRight, CircleAlert, Folder, FolderOpen, FolderPlus, LayoutGrid, List, Search } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError, type Message } from '../shared/messages'
 import { desktop, listMedia, pickMedia } from '../shared/bridge'
 import { type MediaFile, type Source } from '../shared/model'
 import { ItemIcon } from './CueList'
+import { AddToPlaylistButton, SendToKioskButton } from './Editors'
 
 export type MediaView = 'list' | 'tile'
 export type MediaFilter = 'all' | MediaFile['kind']
 type CatalogItem = MediaFile & { location: string }
+type MediaLocation = { kind: 'source'; id: string } | { kind: 'file'; file: MediaFile }
 
 const filters: { value: MediaFilter; label: Message }[] = [
   { value: 'all', label: 'All media' },
@@ -31,28 +33,43 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
   onFilterChange: (filter: MediaFilter) => void;
   view: MediaView;
   onViewChange: (view: MediaView) => void;
-  onAddFolder: () => Promise<void>;
+  onAddFolder?: () => Promise<void>;
   busy: boolean;
-  onSave: (file: MediaFile) => void;
-  onLive: (file: MediaFile) => void;
+  onSave?: (file: MediaFile) => void;
+  onLive?: (file: MediaFile) => void;
 }) {
   const { t } = useLanguage()
   const [query, setQuery] = useState('')
   const [selectedPath, setSelectedPath] = useState<string>()
-  const [openedFile, setOpenedFile] = useState<MediaFile>()
+  const [location, setLocation] = useState<MediaLocation>()
   const [picking, setPicking] = useState(false)
   const [pickerError, setPickerError] = useState('')
   const resultList = useRef<HTMLUListElement>(null)
+  const searchInput = useRef<HTMLInputElement>(null)
   const [catalog, setCatalog] = useState<{ sources: Source[]; items: CatalogItem[]; unavailable: string[] }>()
+  const browseSources = !!onLive
+  const source = location?.kind === 'source' ? sources.find(source => source.id === location.id) : undefined
+  const openedFile = location?.kind === 'file' ? location.file : undefined
+  const atRoot = browseSources && !source && !openedFile
+  const scanSources = useMemo(() => browseSources ? (source ? [source] : []) : sources, [browseSources, source, sources])
 
   useEffect(() => {
+    if (location?.kind === 'source' && !source) {
+      setLocation(undefined)
+      setSelectedPath(undefined)
+      setQuery('')
+    }
+  }, [location, source])
+
+  useEffect(() => {
+    if (!scanSources.length) return
     let active = true
-    void Promise.allSettled(sources.map(listMedia)).then(results => {
+    void Promise.allSettled(scanSources.map(listMedia)).then(results => {
       if (!active) return
       const items = new Map<string, CatalogItem>()
       const unavailable: string[] = []
       results.forEach((result, index) => {
-        const source = sources[index]
+        const source = scanSources[index]
         if (result.status === 'rejected') {
           unavailable.push(source.name)
           return
@@ -62,26 +79,29 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
         }
       })
       const sorted = [...items.values()].sort((a, b) => collator.compare(a.name, b.name) || collator.compare(a.location, b.location))
-      setCatalog({ sources, items: sorted, unavailable })
+      setCatalog({ sources: scanSources, items: sorted, unavailable })
     })
     return () => { active = false }
-  }, [sources])
+  }, [scanSources])
 
-  const current = catalog?.sources === sources ? catalog : undefined
-  const loading = sources.length > 0 && !current
-  const shown = useMemo(() => {
+  const current = catalog?.sources === scanSources ? catalog : undefined
+  const loading = scanSources.length > 0 && !current
+  const shown = useMemo((): (CatalogItem | Source)[] => {
     const search = query.trim().toLocaleLowerCase()
-    const items = current?.items ?? []
-    const results = openedFile && !items.some(file => file.path === openedFile.path)
-      ? [{ ...openedFile, location: t('Opened file') }, ...items]
-      : items
-    return results.filter(file => (
-      (filter === 'all' || file.kind === filter)
-      && (file.name.toLocaleLowerCase().includes(search) || file.location.toLocaleLowerCase().includes(search))
+    const matches = (value: string) => value.toLocaleLowerCase().includes(search)
+    if (atRoot) {
+      return sources.filter(folder => matches(folder.name) || (desktop && matches(folder.path)))
+        .sort((a, b) => collator.compare(a.name, b.name) || collator.compare(a.path, b.path))
+    }
+
+    const items = openedFile ? [{ ...openedFile, location: t('Opened file') }] : current?.items ?? []
+    return items.filter(file => (
+      (filter === 'all' || file.kind === filter) && (matches(file.name) || matches(file.location))
     ))
-  }, [current, filter, openedFile, query, t])
-  const selectedIndex = shown.findIndex(file => file.path === selectedPath)
-  const selected = shown[selectedIndex]
+  }, [atRoot, current, filter, openedFile, query, sources, t])
+  const selectedIndex = shown.findIndex(item => item.path === selectedPath)
+  const selection = shown[selectedIndex]
+  const selected = selection && 'kind' in selection ? selection : undefined
   const canAct = !!selected && !busy && !picking
 
   function act(action: (file: MediaFile) => void) {
@@ -95,9 +115,10 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
     const inResults = target instanceof Node && !!list?.contains(target)
 
     if (event.key === 'Enter' && (inResults || target instanceof HTMLInputElement || event.ctrlKey)) {
-      if (!selected) return
+      const action = event.ctrlKey ? onLive : onSave
+      if (!selected || !action) return
       event.preventDefault()
-      if (!event.repeat) act(event.ctrlKey ? onLive : onSave)
+      if (!event.repeat) act(action)
       return
     }
 
@@ -126,19 +147,22 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
     button?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
 
+  function openLocation(next?: MediaLocation) {
+    setLocation(next)
+    setSelectedPath(next?.kind === 'file' ? next.file.path : undefined)
+    setQuery('')
+    searchInput.current?.focus({ preventScroll: true })
+  }
+
   async function pick(action: 'file' | 'folder') {
     setPickerError('')
     setPicking(true)
     try {
       if (action === 'folder') {
-        await onAddFolder()
+        await onAddFolder?.()
       } else {
         const file = await pickMedia(filter === 'all' ? undefined : filter)
-        if (file) {
-          setOpenedFile(file)
-          setSelectedPath(file.path)
-          setQuery('')
-        }
+        if (file) openLocation({ kind: 'file', file })
       }
     } catch (reason) {
       setPickerError(reason instanceof Error ? reason.message : String(reason))
@@ -152,17 +176,27 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
       <div className="media-toolbar">
         <label className="search-box">
           <Search size={17} aria-hidden="true" />
-          <input type="search" ref={input => { if (input) input.autofocus = true }}
-            aria-label={t('Search media')} value={query} placeholder={t('Search files and folders')}
+          <input type="search" ref={input => {
+            searchInput.current = input
+            if (input) input.autofocus = true
+          }} aria-label={t('Search media')} value={query}
+            placeholder={t(atRoot ? 'Search source folders' : source ? 'Search this folder' : 'Search files and folders')}
             onChange={event => setQuery(event.target.value)} />
         </label>
-        <div className="media-tools">
+        {onAddFolder && <div className="media-tools">
           <button className="button" disabled={picking} onClick={() => void pick('file')}><FolderOpen size={16} /> {t('Open file')}</button>
           <button className="button" disabled={picking} onClick={() => void pick('folder')}><FolderPlus size={16} /> {t('Add folder')}</button>
-        </div>
+        </div>}
       </div>
 
       <div className="media-options">
+        {browseSources && <nav className="media-path" aria-label={t('Media sources')}>
+          {atRoot ? <span aria-current="location">{t('Media sources')}</span> : <>
+            <button type="button" className="button button-quiet" onClick={() => openLocation()}>{t('Media sources')}</button>
+            <ChevronRight size={14} aria-hidden="true" />
+            <span aria-current="location" title={source?.name}>{source?.name ?? t('Opened file')}</span>
+          </>}
+        </nav>}
         <div className="media-segment" role="group" aria-label={t('Media type')}>
           {filters.map(option => (
             <button key={option.value} className="button" aria-pressed={filter === option.value}
@@ -185,47 +219,56 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
       <div className="media-results" role="region" aria-label={t('Media results')} aria-busy={loading}>
         {shown.length ? (
           <ul ref={resultList} className={`media-entries media-entries--${view}`}>
-            {shown.map((file, index) => (
-              <li key={file.path}>
-                <button type="button" className="media-result" aria-pressed={selectedIndex === index}
-                  tabIndex={index === Math.max(0, selectedIndex) ? 0 : -1}
-                  title={file.path} onFocus={() => setSelectedPath(file.path)}
-                  onClick={event => {
-                    event.currentTarget.focus({ preventScroll: true })
-                    setSelectedPath(file.path)
-                  }}>
-                  <ItemIcon kind={file.kind} size={view === 'tile' ? 28 : 16} />
-                  <span className="media-result-text">
-                    <strong>{file.name}</strong>
-                    <span>{file.location}</span>
-                  </span>
-                  <span className="media-result-type">{file.kind === 'video' ? t('Movie') : t('Audio')}</span>
-                  <Check className="media-result-check" size={15} aria-hidden="true" />
-                </button>
-              </li>
-            ))}
+            {shown.map((item, index) => {
+              const isFile = 'kind' in item
+              return (
+                <li key={item.path} className={isFile && onLive ? 'result-with-send' : undefined}
+                  onFocus={() => setSelectedPath(item.path)}>
+                  <button type="button" className="media-result" aria-pressed={isFile ? selectedIndex === index : undefined}
+                    tabIndex={index === Math.max(0, selectedIndex) ? 0 : -1} title={isFile || desktop ? item.path : item.name}
+                    onClick={event => {
+                      if (!isFile) {
+                        openLocation({ kind: 'source', id: item.id })
+                        return
+                      }
+                      event.currentTarget.focus({ preventScroll: true })
+                      setSelectedPath(item.path)
+                    }}>
+                    {isFile ? <ItemIcon kind={item.kind} size={view === 'tile' ? 28 : 16} />
+                      : <span className="item-icon media-folder-icon"><Folder size={view === 'tile' ? 30 : 18} aria-hidden="true" /></span>}
+                    <span className="media-result-text">
+                      <strong>{item.name}</strong>
+                      <span>{isFile ? item.location : desktop ? item.path : t('Folder')}</span>
+                    </span>
+                    {isFile ? <>
+                      {(item.kind === 'audio' || !onLive) && (
+                        <span className="media-result-type">{item.kind === 'video' ? t('Movie') : t('Audio')}</span>
+                      )}
+                      {!onLive && <Check className="media-result-check" size={15} aria-hidden="true" />}
+                    </> : <ChevronRight className="media-folder-chevron" size={15} aria-hidden="true" />}
+                  </button>
+                  {isFile && onLive && <SendToKioskButton name={item.name} disabled={busy || picking} onClick={() => onLive(item)} />}
+                </li>
+              )
+            })}
           </ul>
         ) : (
           <p className="media-empty" role="status">{loading ? t('Scanning media folders…')
-            : !sources.length && !openedFile ? t('Add a folder to browse your media, or open a file.')
+            : atRoot ? t(sources.length ? 'No source folders match your search.' : 'Add a folder to browse your media, or open a file.')
+            : !sources.length && !openedFile ? t('No media sources added.')
             : query.trim() || filter !== 'all' ? t('No media matches your search or filter.')
-            : t('No media found in your source folders.')}</p>
+            : t(source ? 'No audio or video files in this folder.' : 'No media found in your source folders.')}</p>
         )}
       </div>
 
-      <div className="media-footer">
+      {onSave && <div className="media-footer">
         <p className="media-selection" role="status" title={selected?.name}>
           {selected ? selected.name : loading ? '' : t(shown.length === 1 ? '{count} item' : '{count} items', { count: shown.length })}
         </p>
         <div className="dialog-actions">
-          <button type="button" className="button" disabled={!canAct} aria-keyshortcuts="Control+Enter" onClick={() => act(onLive)}>
-            <RadioTower size={16} /> {t('Send to Kiosk')} <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>
-          </button>
-          <button type="button" className="button button-primary" disabled={!canAct} aria-keyshortcuts="Enter" onClick={() => act(onSave)}>
-            <Plus size={17} /> {t('Add to playlist')} <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>
-          </button>
+          <AddToPlaylistButton disabled={!canAct} onClick={() => act(onSave)} />
         </div>
-      </div>
+      </div>}
     </div>
   )
 }

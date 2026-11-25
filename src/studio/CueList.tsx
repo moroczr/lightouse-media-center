@@ -20,8 +20,8 @@ export function ItemIcon({ kind, size = 16 }: { kind: ItemKind; size?: number })
   return <span className={`item-icon item-icon--${kind}`}><Icon size={size} strokeWidth={1.9} /></span>
 }
 
-export function Menu({ label, trigger, children, primary = false }: {
-  label: string; trigger: ReactNode; children: ReactNode; primary?: boolean;
+export function Menu({ label, trigger, children }: {
+  label: string; trigger: ReactNode; children: ReactNode;
 }) {
   const details = useRef<HTMLDetailsElement>(null)
   const stopPositioning = useRef<(() => void) | null>(null)
@@ -49,7 +49,7 @@ export function Menu({ label, trigger, children, primary = false }: {
         return
       }
 
-      const scrollArea = menu.closest('.cue-scroll')
+      const scrollArea = menu.closest('.cue-scroll, .cue-panel')
       const panel = menu.querySelector<HTMLElement>('.menu-body')
       if (!scrollArea || !panel) return
 
@@ -95,7 +95,7 @@ export function Menu({ label, trigger, children, primary = false }: {
         details.current.querySelector('summary')?.focus()
       }
     }}>
-      <summary aria-label={label} title={label} className={primary ? 'button button-primary' : 'icon-button'}>{trigger}</summary>
+      <summary aria-label={label} title={label} className="icon-button">{trigger}</summary>
       <div className="menu-body" onClick={event => {
         if ((event.target as HTMLElement).closest('button') && details.current) details.current.open = false
       }}>
@@ -203,7 +203,7 @@ function GroupRows({ group, depth, props }: { group: Group; depth: number; props
 export function CueList(props: CueListProps) {
   const { t } = useLanguage()
   if (!props.root.children.length) {
-    return <div className="empty-list"><ListMusic size={27} /><p>{t('This playlist is empty')}</p><button className="button" onClick={() => props.onAdd(props.root.id)}><Plus size={16} /> {t('Add cue')}</button></div>
+    return <div className="empty-list"><ListMusic size={27} /><p>{t('This playlist is empty')}</p></div>
   }
   return <GroupRows group={props.root} depth={0} props={props} />
 }

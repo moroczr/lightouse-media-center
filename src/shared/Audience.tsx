@@ -194,10 +194,13 @@ export function Audience({ cue, stage, background, output = false }: AudiencePro
     },
   }
 
+  const backgroundImage = background && <img className="audience-background" src={background} alt="" />
+
   return (
     <div className={`audience${output ? ' audience--output' : ''}`}>
-      {!cue && background && <img className="audience-background" src={background} alt="" />}
-      {!cue && !background && !output && <div className="slide-empty"><Monitor size={24} /><span>{t('No cue selected')}</span></div>}
+      {!cue && !blackout && (backgroundImage || (!output && (
+        <div className="slide-empty"><Monitor size={24} /><span>{t('No cue selected')}</span></div>
+      )))}
       {cue && !isMedia(cue) && <SlideText cue={cue} />}
       {cue?.kind === 'video' && (
         <>
@@ -208,7 +211,7 @@ export function Audience({ cue, stage, background, output = false }: AudiencePro
       {cue?.kind === 'audio' && (output
         ? <audio {...mediaProps} src={cue.url} muted={muted} />
         : <div className="slide-empty"><Music2 size={26} /><span>{cue.title}</span></div>)}
-      {blackout && <div className="slide-blackout" />}
+      {blackout && <div className="slide-blackout">{backgroundImage}</div>}
     </div>
   )
 }

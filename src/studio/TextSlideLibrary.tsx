@@ -1,42 +1,61 @@
 import { useRef, useState, type KeyboardEvent } from 'react'
-import { ChevronRight, Folder, FolderPlus, Pencil, Plus, RadioTower, Search } from 'lucide-react'
+import { ChevronRight, Folder, FolderPlus, LayoutGrid, List, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { Audience } from '../shared/Audience'
 import { useLanguage } from '../shared/i18n'
 import { translateError } from '../shared/messages'
-import { textSlideCues, type Group, type LibraryTextSlide } from '../shared/model'
+import { textSlideCues, type LibraryTextSlide } from '../shared/model'
 import { ItemIcon } from './CueList'
+import { AddToPlaylistButton, SendToKioskButton } from './Editors'
 
-function playlistDestinations(group: Group, root = group.id, label = group.title): { id: string; root: string; label: string }[] {
-  return [
-    { id: group.id, root, label },
-    ...group.children.flatMap(child => child.kind === 'playlist'
-      ? playlistDestinations(child, root, `${label} / ${child.title}`) : []),
-  ]
+function RowAction({ icon: Icon, label, disabled, danger, onClick }: {
+  icon: typeof Pencil
+  label: string
+  disabled: boolean
+  danger?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button type="button" className={`icon-button${danger ? ' text-library-delete' : ''}`}
+      disabled={disabled} title={label} aria-label={label} onClick={onClick}>
+      <Icon size={15} aria-hidden="true" />
+    </button>
+  )
 }
 
+export type TextLibraryView = 'list' | 'mosaic'
+
+type TextLibraryActions =
+  | { kind: 'pick'; onAdd: (item: LibraryTextSlide) => void }
+  | {
+    kind: 'browse'
+    onCreate: (folder: string) => void
+    onCreateLibrary: () => void
+    onRenameLibrary: (folder: string) => void
+    onDeleteLibrary: (folder: string) => void
+    onEdit: (item: LibraryTextSlide) => void
+    onDelete: (item: LibraryTextSlide) => void
+    onLive: (item: LibraryTextSlide) => void
+  }
+
 export function TextSlideLibrary({
-  items, libraries, playlists, parent, selectedId, initialFolder, saving, error, busy, onCreate, onCreateLibrary, onCreateOneOff, onEdit, onAdd, onLive,
+  items, libraries, selectedId, initialFolder, saving, error, busy, view, onViewChange, actions,
 }: {
   items: LibraryTextSlide[]
   libraries: string[]
-  playlists: Group[]
-  parent: string
   selectedId?: string
   initialFolder?: string
   saving: boolean
   error: string
   busy: boolean
-  onCreate: (folder: string) => void
-  onCreateLibrary: () => void
-  onCreateOneOff: () => void
-  onEdit: (item: LibraryTextSlide) => void
-  onAdd: (item: LibraryTextSlide, parent: string, root: string) => void
-  onLive: (item: LibraryTextSlide) => void
+  view: TextLibraryView
+  onViewChange: (view: TextLibraryView) => void
+  actions: TextLibraryActions
 }) {
   const { language, t } = useLanguage()
+  const mosaic = view === 'mosaic'
   const [folder, setFolder] = useState(() => items.find(item => item.slide.id === selectedId)?.folder ?? initialFolder ?? '')
   const [query, setQuery] = useState('')
   const [selection, setSelection] = useState(selectedId ? `slide:${selectedId}` : undefined)
-  const [destination, setDestination] = useState<{ parent: string; id: string }>()
   const searchInput = useRef<HTMLInputElement>(null)
   const resultList = useRef<HTMLUListElement>(null)
   const search = query.trim().toLocaleLowerCase()
@@ -56,9 +75,6 @@ export function TextSlideLibrary({
   const selectedIndex = rows.findIndex(row => row.key === selection)
   const selectedRow = rows[selectedIndex]
   const selected = selectedRow?.kind === 'slide' ? selectedRow.item : undefined
-  const destinations = playlists.flatMap(group => playlistDestinations(group))
-  const targetId = destination?.parent === parent ? destination.id : parent
-  const target = destinations.find(option => option.id === targetId) ?? destinations.find(option => option.id === parent)
   const crumbs = folder ? folder.split('/') : []
 
   function openFolder(path: string) {
@@ -68,44 +84,49 @@ export function TextSlideLibrary({
     searchInput.current?.focus()
   }
 
-  function addSelected() {
-    if (selected && target && !busy) onAdd(selected, target.id, target.root)
-  }
-
-  function sendSelected() {
-    if (selected && !busy) onLive(selected)
-  }
-
   function navigate(event: KeyboardEvent<HTMLDivElement>) {
     if (event.defaultPrevented || event.nativeEvent.isComposing || event.altKey || event.metaKey || event.shiftKey) return
     const list = resultList.current
     const source = event.target
-    const inResults = source instanceof Node && !!list?.contains(source)
-    if (event.key === 'Enter' && (inResults || source === searchInput.current || event.ctrlKey)) {
-      // Let an unmodified Enter activate a focused folder through its button.
-      if (!selected && !event.ctrlKey) return
-      event.preventDefault()
-      if (!event.repeat) {
-        if (event.ctrlKey) sendSelected()
-        else addSelected()
+    const inResults = source instanceof HTMLElement && !!list?.contains(source)
+    const onRow = inResults && source.matches('.text-library-row-main')
+    if (event.key === 'Enter' && selected && (onRow || source === searchInput.current)) {
+      const action = event.ctrlKey
+        ? (actions.kind === 'browse' ? actions.onLive : undefined)
+        : (actions.kind === 'pick' ? actions.onAdd : undefined)
+      if (action) {
+        event.preventDefault()
+        if (!event.repeat && !busy) action(selected)
+        return
       }
-      return
     }
-    if (event.ctrlKey || busy || !list || source instanceof HTMLSelectElement) return
+    if (event.ctrlKey || busy || !list) return
 
-    const direction = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
-    if (!direction) return
+    const { key } = event
+    const vertical = key === 'ArrowDown' || key === 'ArrowUp'
+    const horizontal = key === 'ArrowLeft' || key === 'ArrowRight'
+    if (!vertical && !(mosaic && inResults && horizontal)) return
     event.preventDefault()
+
     const last = rows.length - 1
-    const index = selectedIndex < 0 ? (direction === 1 ? 0 : last)
-      : Math.max(0, Math.min(last, selectedIndex + (inResults ? direction : 0)))
+    let index = selectedIndex
+    if (index < 0) {
+      index = key === 'ArrowUp' ? last : 0
+    } else if (inResults) {
+      const columns = mosaic ? getComputedStyle(list).gridTemplateColumns.split(/\s+/).length : 1
+      const column = index % columns
+      if (key === 'ArrowUp' && index >= columns) index -= columns
+      if (key === 'ArrowDown' && index - column + columns <= last) index = Math.min(index + columns, last)
+      if (key === 'ArrowLeft' && column > 0) index--
+      if (key === 'ArrowRight' && column + 1 < columns && index < last) index++
+    }
     const button = list.children[index]?.querySelector('button')
     button?.focus({ preventScroll: true })
     button?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
 
   return (
-    <div className="editor" onKeyDown={navigate}>
+    <div className={`editor text-library${mosaic ? ' text-library--mosaic' : ''}`} onKeyDown={navigate}>
       <div className="text-library-toolbar">
         <label className="search-box">
           <Search size={17} aria-hidden="true" />
@@ -115,92 +136,105 @@ export function TextSlideLibrary({
               if (element) element.autofocus = true
             }} onChange={event => setQuery(event.target.value)} />
         </label>
-        <button type="button" className="button" onClick={onCreateOneOff}>{t('One-off text slide')}</button>
-        {libraries.includes(folder) ? (
-          <button type="button" className="button button-primary" onClick={() => onCreate(folder)}>
+        {actions.kind === 'browse' && (libraries.includes(folder) ? (
+          <button type="button" className="button button-primary" onClick={() => actions.onCreate(folder)}>
             <Plus size={16} aria-hidden="true" /> {t('New text slide')}
           </button>
         ) : (
-          <button type="button" className="button button-primary" onClick={onCreateLibrary}>
-            <FolderPlus size={16} aria-hidden="true" /> {t('New library')}
-          </button>
-        )}
+          <button type="button" className="icon-button" aria-label={t('New library')} title={t('New library')}
+            onClick={actions.onCreateLibrary}><FolderPlus size={16} aria-hidden="true" /></button>
+        ))}
       </div>
 
-      <nav className="text-library-path" aria-label={t('Slide libraries')}>
-        <button type="button" className="button button-quiet" aria-current={!folder ? 'location' : undefined}
-          onClick={() => openFolder('')}>{t('Library')}</button>
-        {crumbs.map((part, index) => {
-          const path = crumbs.slice(0, index + 1).join('/')
-          return (
-            <span key={path}>
-              <ChevronRight size={13} aria-hidden="true" />
-              <button type="button" className="button button-quiet" aria-current={path === folder ? 'location' : undefined}
-                onClick={() => openFolder(path)}>{part}</button>
-            </span>
-          )
-        })}
-      </nav>
+      <div className="text-library-options">
+        <nav className="text-library-path" aria-label={t('Slide libraries')}>
+          <button type="button" className="button button-quiet" aria-current={!folder ? 'location' : undefined}
+            onClick={() => openFolder('')}>{t('Library')}</button>
+          {crumbs.map((part, index) => {
+            const path = crumbs.slice(0, index + 1).join('/')
+            return (
+              <span key={path}>
+                <ChevronRight size={13} aria-hidden="true" />
+                <button type="button" className="button button-quiet" aria-current={path === folder ? 'location' : undefined}
+                  onClick={() => openFolder(path)}>{part}</button>
+              </span>
+            )
+          })}
+        </nav>
+        <div className="media-segment" role="group" aria-label={t('Text slide view')}>
+          <button type="button" className="icon-button" title={t('List view')} aria-label={t('List view')}
+            aria-pressed={!mosaic} onClick={() => onViewChange('list')}><List size={17} aria-hidden="true" /></button>
+          <button type="button" className="icon-button" title={t('Mosaic view')} aria-label={t('Mosaic view')}
+            aria-pressed={mosaic} onClick={() => onViewChange('mosaic')}><LayoutGrid size={17} aria-hidden="true" /></button>
+        </div>
+      </div>
 
       <div className="media-results" role="region" aria-label={t('Saved text slides')} aria-busy={saving}>
         {rows.length ? (
-          <ul className="media-entries" ref={resultList}>
+          <ul className={`media-entries${mosaic ? ' text-library-grid' : ''}`} ref={resultList}>
             {rows.map((row, index) => {
-              const count = row.kind === 'slide' ? textSlideCues(row.item.slide).length : 0
+              const item = row.kind === 'slide' ? row.item : undefined
+              const name = row.kind === 'folder' ? row.name : row.item.slide.title
+              const cues = item ? textSlideCues(item.slide) : []
+              const count = cues.length
               return (
-                <li key={row.key}>
-                  <button type="button" className="media-result"
-                    aria-pressed={row.kind === 'slide' ? index === selectedIndex : undefined}
+                <li key={row.key} className="text-library-row" onFocus={() => setSelection(row.key)}>
+                  {mosaic && (
+                    <div className="text-library-thumbnail" aria-hidden="true">
+                      {item ? <Audience cue={cues[0] ?? null} /> : <Folder size={36} />}
+                    </div>
+                  )}
+                  <button type="button" className="media-result text-library-row-main" title={name}
+                    aria-pressed={item ? index === selectedIndex : undefined}
                     tabIndex={index === Math.max(0, selectedIndex) ? 0 : -1}
-                    onFocus={() => setSelection(row.key)}
                     onClick={event => {
-                      if (row.kind === 'folder') {
-                        openFolder(row.path)
-                      } else {
+                      if (row.kind === 'folder') openFolder(row.path)
+                      else {
                         event.currentTarget.focus({ preventScroll: true })
                         setSelection(row.key)
                       }
                     }}>
                     {row.kind === 'folder' ? <>
-                      <Folder size={22} aria-hidden="true" />
-                      <span className="media-result-text"><strong>{row.name}</strong><span>{libraries.includes(row.path) ? t('Library') : t('Folder')}</span></span>
+                      {!mosaic && <Folder size={22} aria-hidden="true" />}
+                      <span className="media-result-text"><strong>{name}</strong><span>{libraries.includes(row.path) ? t('Library') : t('Folder')}</span></span>
                       <ChevronRight size={16} aria-hidden="true" />
                     </> : <>
-                      <ItemIcon kind="text" />
-                      <span className="media-result-text"><strong>{row.item.slide.title}</strong><span>{row.item.folder || t('Library')}</span></span>
+                      {!mosaic && <ItemIcon kind="text" />}
+                      <span className="media-result-text"><strong>{name}</strong><span>{row.item.folder || t('Library')}</span></span>
                       <span className="media-result-type">{t(count === 1 ? '{count} slide' : '{count} slides', { count })}</span>
                     </>}
                   </button>
+                  {actions.kind === 'browse' && (
+                    <div className="text-library-row-actions" role="group" aria-label={t('Actions for {name}', { name })}>
+                      {row.kind === 'folder' ? <>
+                        <RowAction icon={Pencil} label={t('Rename library {name}', { name })} disabled={busy} onClick={() => actions.onRenameLibrary(row.path)} />
+                        <RowAction icon={Trash2} label={t('Delete library {name}', { name })} danger disabled={busy} onClick={() => actions.onDeleteLibrary(row.path)} />
+                      </> : <>
+                        <SendToKioskButton name={name} disabled={busy} onClick={() => actions.onLive(row.item)} />
+                        <RowAction icon={Pencil} label={t('Edit slide {name}', { name })} disabled={busy} onClick={() => actions.onEdit(row.item)} />
+                        <RowAction icon={Trash2} label={t('Delete slide {name}', { name })} danger disabled={busy} onClick={() => actions.onDelete(row.item)} />
+                      </>}
+                    </div>
+                  )}
                 </li>
               )
             })}
           </ul>
         ) : (
           <p className="media-empty" role="status">{search ? t('No text slides match your search.')
-            : libraries.length ? t('No saved text slides here.') : t('Create a library to save text slides.')}</p>
+            : libraries.length || actions.kind === 'pick' ? t('No saved text slides here.') : t('Create a library to save text slides.')}</p>
         )}
       </div>
+      {actions.kind === 'pick' && (
+        <div className="media-footer">
+          <p className="media-selection" role="status" title={selected?.slide.title}>{selected?.slide.title}</p>
+          <div className="dialog-actions">
+            <AddToPlaylistButton disabled={busy || !selected} onClick={() => { if (selected) actions.onAdd(selected) }} />
+          </div>
+        </div>
+      )}
       {saving && <p role="status">{t('Saving text slide library…')}</p>}
       {error && <p className="media-warning" role="alert">{translateError(t, error)}</p>}
-
-      <label>
-        {t('Destination playlist')}
-        <select value={target?.id ?? ''} onChange={event => setDestination({ parent, id: event.target.value })}>
-          {destinations.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
-        </select>
-      </label>
-      <div className="dialog-actions">
-        <button type="button" className="button" disabled={!selected || busy} onClick={() => selected && onEdit(selected)}>
-          <Pencil size={15} aria-hidden="true" /> {t('Edit')}
-        </button>
-        <button type="button" className="button" disabled={!selected || busy} aria-keyshortcuts="Control+Enter" onClick={sendSelected}>
-          <RadioTower size={16} aria-hidden="true" /> {t('Send to Kiosk')} <kbd className="cue-shortcut" aria-hidden="true">Ctrl+↵</kbd>
-        </button>
-        <button type="button" className="button button-primary" disabled={!selected || !target || busy}
-          aria-keyshortcuts="Enter" onClick={addSelected}>
-          <Plus size={17} aria-hidden="true" /> {t('Add to playlist')} <kbd className="cue-shortcut" aria-hidden="true">↵</kbd>
-        </button>
-      </div>
     </div>
   )
 }

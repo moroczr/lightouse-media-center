@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Ban, ChevronLeft, ChevronRight, Monitor, Pause, Play, RadioTower, RotateCcw, RotateCw, Square, Volume2, VolumeX } from 'lucide-react'
+import { Ban, ChevronLeft, ChevronRight, Monitor, Pause, Play, RotateCcw, RotateCw, Square, Volume2, VolumeX } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError } from '../shared/messages'
 import { Audience } from '../shared/Audience'
@@ -18,12 +18,6 @@ interface PreviewProps {
   nextError: string
   kiosk: boolean
   busy: boolean
-  canGoLive: boolean
-  hasPrevious: boolean
-  hasNext: boolean
-  onPrevious: () => void
-  onNext: () => void
-  onGoLive: () => void
   dropTarget: CueDropTarget | null
   onBlackout: () => void
   onNavigateVerse: (verse: PassageVerse) => void
@@ -122,11 +116,13 @@ function VerseNavigation({ reference, busy, onSelect }: {
 
   return (
     <div className="live-controls step-navigation" role="group" aria-label={t('Live verse navigation')} aria-busy={!current}>
-      <button type="button" className="button" disabled={busy || !previous} onClick={() => previous && onSelect(previous)}>
-        <ChevronLeft size={16} aria-hidden="true" /> {t('Previous verse')}
+      <button type="button" className="button" aria-label={t('Previous verse')} title={t('Previous verse')}
+        disabled={busy || !previous} onClick={() => previous && onSelect(previous)}>
+        <ChevronLeft size={16} aria-hidden="true" /><span>{t('Previous verse')}</span>
       </button>
-      <button type="button" className="button" disabled={busy || !next} onClick={() => next && onSelect(next)}>
-        {t('Next verse')} <ChevronRight size={16} aria-hidden="true" />
+      <button type="button" className="button" aria-label={t('Next verse')} title={t('Next verse')}
+        disabled={busy || !next} onClick={() => next && onSelect(next)}>
+        <span>{t('Next verse')}</span><ChevronRight size={16} aria-hidden="true" />
       </button>
       {current && !current.neighbors && <span role="status">{t('Could not load adjacent verses.')}</span>}
     </div>
@@ -188,59 +184,61 @@ export function Preview(props: PreviewProps) {
   const live = props.kiosk && !!stage.cue && !stage.blackout
   const media = isMedia(stage.cue)
   const audience = stage.cue ?? (props.background ? null : props.standby)
+  const { textNavigation } = props
   const status = stage.blackout ? 'Blackout' : live ? 'Live' : stage.cue ? 'Staged' : 'Standby'
+  const liveTitle = !stage.blackout && audience ? audience.title
+    : props.background ? t('Kiosk background') : t(stage.blackout ? 'Display is black' : 'No live cue')
 
   return (
-    <>
-      <div className="preview-grid">
-        <section className="preview-panel preview-panel--live" aria-labelledby="live-heading">
-          <header className="preview-heading">
-            <h2 id="live-heading"><Monitor size={15} /> {t('Live output')}</h2>
-            <span className={`status-pill${live ? ' status-pill--live' : ''}`}><span />{t(status)}</span>
-          </header>
-          <CueDropScreen target={props.busy ? undefined : 'live'} active={props.dropTarget === 'live'} prompt={t('Drop to go live')}>
-            <Audience key={stage.revision} cue={audience} background={props.background} stage={props.kiosk ? stage : { ...stage, playing: false }} />
-          </CueDropScreen>
-          <div className="preview-caption">
-            <span>{stage.blackout ? t('Display is black') : audience?.title ?? (props.background ? t('Kiosk background') : t('No live cue'))}</span>
-            {audience && !media && <span className="subtle">{stage.cue ? t('Audience view') : t('Standby preview')}</span>}
-          </div>
-        </section>
+    <div className="preview-grid">
+      <section className="preview-panel preview-panel--live" aria-labelledby="live-heading">
+        <header className="preview-heading">
+          <h2 id="live-heading"><Monitor size={15} /> {t('Live output')}</h2>
+          <span className={`status-pill${live ? ' status-pill--live' : ''}`}><span />{t(status)}</span>
+        </header>
+        <CueDropScreen target={props.busy ? undefined : 'live'} active={props.dropTarget === 'live'} prompt={t('Drop to go live')}>
+          <Audience key={stage.revision} cue={audience} background={props.background} stage={props.kiosk ? stage : { ...stage, playing: false }} />
+          <button type="button" className="button preview-blackout" aria-label={t('Blackout')} aria-pressed={stage.blackout}
+            onClick={props.onBlackout} aria-keyshortcuts="Control+Shift+B" title={t('Toggle blackout (Ctrl+Shift+B)')}><Ban size={16} aria-hidden="true" /><span>{t('Blackout')}</span></button>
+        </CueDropScreen>
+        <div className="preview-caption">
+          <span>{liveTitle}</span>
+          {audience && !media && !stage.blackout && <span className="subtle">{stage.cue ? t('Audience view') : t('Standby preview')}</span>}
+        </div>
+      </section>
+      <section className="preview-panel preview-panel--next" aria-labelledby="next-heading">
+        <header className="preview-heading">
+          <h2 id="next-heading"><ChevronRight size={17} /> {t('Next up')}</h2>
+          {props.next && <span className="status-pill status-pill--next">{t('Queued')}</span>}
+        </header>
+        <CueDropScreen target="next" active={props.dropTarget === 'next'} prompt={t('Drop to queue')}>
+          <Audience key={props.next?.id ?? 'empty'} cue={props.next} />
+          {props.nextError && <div className="slide-empty slide-overlay" role="status">{translateError(t, props.nextError)}</div>}
+        </CueDropScreen>
+        <div className="preview-caption">
+          <span>{props.nextTitle ?? t('No cue selected')}</span>
+          {props.next && <ItemIcon kind={props.next.kind} size={13} />}
+        </div>
+      </section>
+      <KioskVolume stage={stage} onAction={props.onPlayback} />
+      <div className="live-transport">
         {media && <MediaPlayback key={stage.revision} stage={stage} onAction={props.onPlayback} />}
         {stage.cue?.kind === 'scripture' && (
           <VerseNavigation reference={stage.cue.reference} busy={props.busy} onSelect={props.onNavigateVerse} />
         )}
-        {props.textNavigation && (
+        {textNavigation && (
           <div className="live-controls step-navigation" role="group" aria-label={t('Live text slide navigation')}>
-            <button type="button" className="button" disabled={props.busy || props.textNavigation.index === 0}
-              onClick={() => props.textNavigation?.onMove(-1)}><ChevronLeft size={16} aria-hidden="true" /> {t('Previous slide')}</button>
-            <button type="button" className="button" disabled={props.busy || props.textNavigation.index + 1 === props.textNavigation.total}
-              onClick={() => props.textNavigation?.onMove(1)}>{t('Next slide')} <ChevronRight size={16} aria-hidden="true" /></button>
+            <button type="button" className="button" aria-label={t('Previous slide')} title={t('Previous slide')}
+              disabled={props.busy || textNavigation.index === 0} onClick={() => textNavigation.onMove(-1)}>
+              <ChevronLeft size={16} aria-hidden="true" /><span>{t('Previous slide')}</span>
+            </button>
+            <button type="button" className="button" aria-label={t('Next slide')} title={t('Next slide')}
+              disabled={props.busy || textNavigation.index + 1 === textNavigation.total} onClick={() => textNavigation.onMove(1)}>
+              <span>{t('Next slide')}</span><ChevronRight size={16} aria-hidden="true" />
+            </button>
           </div>
         )}
-        <section className="preview-panel preview-panel--next" aria-labelledby="next-heading">
-          <header className="preview-heading">
-            <h2 id="next-heading"><ChevronRight size={17} /> {t('Next up')}</h2>
-            {props.next && <span className="status-pill status-pill--next">{t('Queued')}</span>}
-          </header>
-          <CueDropScreen target="next" active={props.dropTarget === 'next'} prompt={t('Drop to queue')}>
-            <Audience key={props.next?.id ?? 'empty'} cue={props.next} />
-            {props.nextError && <div className="slide-empty slide-overlay" role="status">{translateError(t, props.nextError)}</div>}
-          </CueDropScreen>
-          <div className="preview-caption">
-            <span>{props.nextTitle ?? t('No cue selected')}</span>
-            {props.next && <ItemIcon kind={props.next.kind} size={13} />}
-          </div>
-        </section>
-        <KioskVolume stage={stage} onAction={props.onPlayback} />
       </div>
-      <div className="transport" role="group" aria-label={t('Cue controls')}>
-        <button type="button" className="button button-quiet transport-blackout" aria-pressed={stage.blackout}
-          onClick={props.onBlackout} title={t('Toggle blackout (B)')}><Ban size={16} aria-hidden="true" /> {t('Blackout')}</button>
-        <button className="button" disabled={!props.hasPrevious} onClick={props.onPrevious} title={t('Cue previous item (↑)')}><ChevronLeft size={17} /> {t('Previous')}</button>
-        <button className="button" disabled={!props.hasNext} onClick={props.onNext} title={t('Cue next item (↓)')}>{t('Next')} <ChevronRight size={17} /></button>
-        <button className="button button-primary" disabled={!props.canGoLive || props.busy} onClick={props.onGoLive} title={t('Send the queued item to Kiosk (Enter)')}><RadioTower size={17} /> {t('Go live')}</button>
-      </div>
-    </>
+    </div>
   )
 }
