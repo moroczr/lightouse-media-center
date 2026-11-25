@@ -36,7 +36,7 @@ export function TextSlideLibrary({
   const [folder, setFolder] = useState(() => items.find(item => item.slide.id === selectedId)?.folder ?? initialFolder ?? '')
   const [query, setQuery] = useState('')
   const [selection, setSelection] = useState(selectedId ? `slide:${selectedId}` : undefined)
-  const [destination, setDestination] = useState(parent)
+  const [destination, setDestination] = useState<{ parent: string; id: string }>()
   const searchInput = useRef<HTMLInputElement>(null)
   const resultList = useRef<HTMLUListElement>(null)
   const search = query.trim().toLocaleLowerCase()
@@ -57,7 +57,8 @@ export function TextSlideLibrary({
   const selectedRow = rows[selectedIndex]
   const selected = selectedRow?.kind === 'slide' ? selectedRow.item : undefined
   const destinations = playlists.flatMap(group => playlistDestinations(group))
-  const target = destinations.find(option => option.id === destination) ?? destinations[0]
+  const targetId = destination?.parent === parent ? destination.id : parent
+  const target = destinations.find(option => option.id === targetId) ?? destinations.find(option => option.id === parent)
   const crumbs = folder ? folder.split('/') : []
 
   function openFolder(path: string) {
@@ -184,7 +185,7 @@ export function TextSlideLibrary({
 
       <label>
         {t('Destination playlist')}
-        <select value={target?.id ?? ''} onChange={event => setDestination(event.target.value)}>
+        <select value={target?.id ?? ''} onChange={event => setDestination({ parent, id: event.target.value })}>
           {destinations.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
         </select>
       </label>

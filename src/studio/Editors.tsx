@@ -5,8 +5,8 @@ import { translateError } from '../shared/messages'
 import { builtInSlideDefaults, builtInThemes, kindNames, textCueTitle, type Item, type TextEntry, type TextSlide, type Theme } from '../shared/model'
 import { ThemePreview, ThemeSwatch, useSlideThemes } from '../shared/SlideThemes'
 
-export function Dialog({ title, children, onClose, wide, pinActions }: {
-  title: string; children: ReactNode; onClose: () => void; wide?: boolean; pinActions?: boolean;
+export function Dialog({ title, children, onClose }: {
+  title: string; children: ReactNode; onClose: () => void;
 }) {
   const { t } = useLanguage()
   const ref = useRef<HTMLDialogElement>(null)
@@ -19,7 +19,7 @@ export function Dialog({ title, children, onClose, wide, pinActions }: {
 
   return (
     <dialog
-      className={`dialog${wide ? ' dialog--wide' : ''}${pinActions ? ' dialog--pinned-actions' : ''}`}
+      className="dialog"
       ref={ref}
       aria-label={title}
       onCancel={event => { event.preventDefault(); onClose() }}

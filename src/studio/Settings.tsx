@@ -19,7 +19,7 @@ const tabs = [
 
 type Tab = (typeof tabs)[number]['id']
 
-export function SettingsDialog({ onClose }: { onClose: () => void }) {
+export function SettingsDialog({ onClose, onBibleChange }: { onClose: () => void; onBibleChange: () => void }) {
   const { language, setLanguage, t } = useLanguage()
   const [tab, setTab] = useState<Tab>('general')
   const tabList = useRef<HTMLDivElement>(null)
@@ -44,7 +44,10 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
     setError('')
     try {
       const data = await operation()
-      if (data) setSettings(data)
+      if (data) {
+        setSettings(data)
+        onBibleChange()
+      }
     } catch (reason) {
       setError(errorMessage(reason))
     } finally {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import {
   BookOpen, ChevronDown, CircleAlert, Ellipsis, FolderOpen, FolderPlus, Image as ImageIcon, LibraryBig, ListMusic,
   Monitor, MonitorOff, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, Settings, Trash2, Type, X,
@@ -21,7 +21,7 @@ import { CueList, ItemIcon, Menu } from './CueList'
 import { Dialog, NameEditor, TextEditor } from './Editors'
 import { KioskBackgroundEditor } from './KioskBackgroundEditor'
 import { ScriptureEditor } from './ScriptureEditor'
-import { MediaBrowser, type MediaView } from './MediaBrowser'
+import { MediaBrowser, type MediaFilter, type MediaView } from './MediaBrowser'
 import { TextSlideLibrary } from './TextSlideLibrary'
 import { Preview } from './Preview'
 import { SettingsDialog } from './Settings'
@@ -31,22 +31,30 @@ type Editor =
   | { kind: 'settings' }
   | { kind: 'kiosk-background' }
   | { kind: 'choose'; parent: string }
-  | { kind: 'text-library'; parent: string; selectedId?: string; folder?: string }
-  | { kind: 'new-slide-library'; parent: string }
-  | { kind: 'library-text'; parent: string; folder: string; existing?: TextSlide }
-  | { kind: 'text'; parent: string; existing?: TextSlide }
-  | { kind: 'scripture'; parent: string; existing?: ScriptureCue }
   | { kind: 'playlist'; parent: string | null }
-  | { kind: 'media'; parent: string; filter?: 'video' | 'audio' }
   | { kind: 'rename'; parent: string | null; existing: Item }
   | { kind: 'remove'; parent: string | null; item: Item }
 
 type AddCueKind = ItemKind | 'media'
+type ToolTab = 'media' | 'scripture' | 'text'
+type WorkspaceTab = 'cues' | ToolTab
+type TextPanel =
+  | { kind: 'library' }
+  | { kind: 'new-library' }
+  | { kind: 'saved-slide'; folder: string; existing?: TextSlide }
+  | { kind: 'cue'; existing?: TextSlide }
+
+const workspaceTabs = [
+  { id: 'cues', label: 'Cue List', icon: ListMusic },
+  { id: 'media', label: 'Media', icon: LibraryBig, shortcut: 'M' },
+  { id: 'scripture', label: 'Bible lookup', icon: BookOpen, shortcut: 'B' },
+  { id: 'text', label: 'Text slides', icon: Type, shortcut: 'T' },
+] satisfies readonly { id: WorkspaceTab; label: Message; icon: typeof Type; shortcut?: string }[]
 
 const libraryActions = {
-  media: { kind: 'media', label: 'Add Media', shortcut: 'M', icon: LibraryBig },
-  scripture: { kind: 'scripture', label: 'Bible lookup', shortcut: 'B', icon: BookOpen },
-  text: { kind: 'text', label: kindNames.text, shortcut: 'T', icon: Type },
+  media: { kind: 'media', label: 'Add Media', shortcut: 'M' },
+  scripture: { kind: 'scripture', label: 'Bible lookup', shortcut: 'B' },
+  text: { kind: 'text', label: kindNames.text, shortcut: 'T' },
 } as const
 
 const libraryItems = Object.values(libraryActions)
@@ -61,12 +69,12 @@ function errorText(reason: unknown) {
   return reason instanceof Error ? reason.message : String(reason)
 }
 
-function playlistPath(root: Group, target: string): string[] | undefined {
-  if (root.id === target) return [root.id]
+function playlistPath(root: Group, target: string): Group[] | undefined {
+  if (root.id === target) return [root]
   for (const item of root.children) {
     if (item.kind !== 'playlist') continue
     const path = playlistPath(item, target)
-    if (path) return [root.id, ...path]
+    if (path) return [root, ...path]
   }
 }
 
@@ -86,6 +94,14 @@ export default function Studio() {
   const [liveTextCues, setLiveTextCues] = useState<TextCue[]>([])
   const { background, error: backgroundError } = useKioskBackground()
   const [editor, setEditor] = useState<Editor | null>(null)
+  const [tab, setTab] = useState<WorkspaceTab>('cues')
+  const [destinations, setDestinations] = useState<Partial<Record<ToolTab, string>>>({})
+  const [scriptureEdit, setScriptureEdit] = useState<ScriptureCue>()
+  const [bibleSettingsRevision, setBibleSettingsRevision] = useState(0)
+  const [textPanel, setTextPanel] = useState<TextPanel>({ kind: 'library' })
+  const [libraryLocation, setLibraryLocation] = useState<{ revision: number; folder?: string; selectedId?: string }>({ revision: 0 })
+  const [mediaFilter, setMediaFilter] = useState<MediaFilter>('all')
+  const workspaceTabList = useRef<HTMLDivElement>(null)
   const [mediaView, setMediaView] = useState<MediaView>('list')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
@@ -110,6 +126,57 @@ export default function Studio() {
   const standby = !kiosk && stage.revision === 0 && !stage.cue && !desktop
     && active.id === 'sunday' && queued?.id !== welcomePreview.id
     && firstCue?.kind === 'text' && firstCue.id === welcomePreview.id ? firstCue : null
+
+  const mediaTarget = toolDestination('media')
+  const scriptureTarget = toolDestination('scripture')
+  const textTarget = toolDestination('text')
+
+  function toolDestination(tool: ToolTab) {
+    const parent = destinations[tool]
+    return parent && parent !== active.id ? playlistPath(active, parent)?.at(-1) ?? active : active
+  }
+
+  function activateTab(nextTab: WorkspaceTab, focusInput = false) {
+    setTab(nextTab)
+    const focusTab = () => workspaceTabList.current?.querySelector<HTMLButtonElement>(`#workspace-tab-${nextTab}`)?.focus()
+    if (!focusInput) {
+      focusTab()
+      return
+    }
+    // Allow an open menu or cue chooser to finish closing before moving focus.
+    window.requestAnimationFrame(() => {
+      const panel = document.getElementById(`workspace-panel-${nextTab}`)
+      const input = Array.from(panel?.querySelectorAll<HTMLElement>('[autofocus]') ?? [])
+        .find(element => !element.closest('[hidden]') && !element.matches(':disabled'))
+      if (input) input.focus()
+      else focusTab()
+    })
+  }
+
+  function navigateTabs(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+    const index = workspaceTabs.findIndex(item => item.id === tab)
+    const last = workspaceTabs.length - 1
+    const next = event.key === 'ArrowRight' ? (index + 1) % workspaceTabs.length
+      : event.key === 'ArrowLeft' ? (index + last) % workspaceTabs.length
+      : event.key === 'Home' ? 0
+      : event.key === 'End' ? last : undefined
+    if (next === undefined) return
+    event.preventDefault()
+    activateTab(workspaceTabs[next].id)
+  }
+
+  function showCueList() {
+    setDestinations({})
+    setScriptureEdit(undefined)
+    if (textPanel.kind === 'cue' && textPanel.existing) setTextPanel({ kind: 'library' })
+    setTab('cues')
+  }
+
+  function showLibrary(folder?: string, selectedId?: string) {
+    setLibraryLocation(current => ({ revision: current.revision + 1, folder, selectedId }))
+    setTextPanel({ kind: 'library' })
+  }
 
   function tell(text: string, error = false) {
     setNotice({ text, error })
@@ -222,6 +289,8 @@ export default function Studio() {
   function selectPlaylist(root: Group) {
     setProject(current => ({ ...current, activeId: root.id }))
     setCueId(flatten(root.children)[0]?.id ?? null)
+    if (root.id !== active.id) showCueList()
+    else setTab('cues')
   }
 
   function cueItem(id: string | undefined, branchId?: string) {
@@ -235,7 +304,7 @@ export default function Studio() {
     if (candidate) setCueId(candidate.id)
   }
 
-  async function send(item: Cue, mode: 'advance' | 'keep-queue' | 'close-editor', textCues: TextCue[] = []) {
+  async function send(item: Cue, mode: 'advance' | 'keep-queue', textCues: TextCue[] = []) {
     if (transmittingRef.current) return
     transmittingRef.current = true
     setTransmitting(true)
@@ -246,8 +315,6 @@ export default function Studio() {
       if (mode === 'advance') {
         const currentIndex = sequence.findIndex(candidate => candidate.id === item.id)
         setCueId(current => current === item.id ? sequence[currentIndex + 1]?.id ?? null : current)
-      } else if (mode === 'close-editor') {
-        setEditor(null)
       }
       if (!kiosk) tell('Cue staged. Launch Kiosk to present it.')
     } catch (reason) {
@@ -260,7 +327,7 @@ export default function Studio() {
 
   function sendTextSlide(slide: TextSlide) {
     const cues = textSlideCues(slide)
-    if (cues.length) void send(cues[0], 'close-editor', cues)
+    if (cues.length) void send(cues[0], 'keep-queue', cues)
   }
 
   function showAdjacentTextSlide(direction: -1 | 1) {
@@ -337,13 +404,16 @@ export default function Studio() {
         event.preventDefault()
         const openMenu = target instanceof HTMLElement ? target.closest<HTMLDetailsElement>('details.menu') : null
         if (openMenu) openMenu.open = false
-        openEditor(action.kind, editor?.kind === 'choose' ? editor.parent : active.id)
+        if (editor?.kind === 'choose') openCueTool(action.kind, editor.parent)
+        else activateTab(action.kind, true)
         return
       }
       if (editor || (target instanceof HTMLElement && target.closest('input, textarea, select, button, summary, [contenteditable]'))) return
-      if (event.key === 'ArrowUp' && (index > 0 || index < 0)) { event.preventDefault(); nudge(-1) }
-      if (event.key === 'ArrowDown') { event.preventDefault(); nudge(1) }
-      if (event.key === 'Enter' && queued && next) { event.preventDefault(); goLive() }
+      if (tab === 'cues') {
+        if (event.key === 'ArrowUp' && (index > 0 || index < 0)) { event.preventDefault(); nudge(-1) }
+        if (event.key === 'ArrowDown') { event.preventDefault(); nudge(1) }
+        if (event.key === 'Enter' && queued && next) { event.preventDefault(); goLive() }
+      }
       if (event.key.toLowerCase() === 'b') toggleBlackout()
     }
 
@@ -360,14 +430,29 @@ export default function Studio() {
     }
     updatePlaylist(root => updateGroup(root, parent, group => ({ ...group, children: [...group.children, item] })), rootId)
     if (parent !== rootId || item.kind === 'text') {
-      setExpanded(current => new Set([...current, ...path.slice(1), ...(item.kind === 'text' ? [item.id] : [])]))
+      setExpanded(current => new Set([...current, ...path.slice(1).map(group => group.id), ...(item.kind === 'text' ? [item.id] : [])]))
     }
     if (item.kind !== 'playlist') setCueId(flatten([item])[0]?.id ?? null)
-    setEditor(null)
+    return true
   }
 
-  function saveItem(parent: string, item: TextSlide | ScriptureCue, existing?: TextSlide | ScriptureCue) {
-    if (!existing) { addItem(parent, item); return }
+  function addWorkspaceItem(parent: string, item: Item, rootId = active.id) {
+    if (!addItem(parent, item, rootId)) return
+    if (rootId !== active.id) {
+      setDestinations({})
+      setScriptureEdit(undefined)
+    }
+    tell(t('Added “{name}” to playlist.', { name: item.title }))
+  }
+
+  function finishCueEdit(tool: 'text' | 'scripture') {
+    if (tool === 'text') setTextPanel({ kind: 'library' })
+    else setScriptureEdit(undefined)
+    setDestinations(current => ({ ...current, [tool]: undefined }))
+    activateTab('cues')
+  }
+
+  function saveItem(parent: string, item: TextSlide | ScriptureCue, existing: TextSlide | ScriptureCue) {
     updatePlaylist(root => updateGroup(root, parent, group => ({
       ...group, children: group.children.map(child => child.id === item.id ? item : child),
     })))
@@ -386,10 +471,10 @@ export default function Studio() {
       && (shown.id === item.id || previousTextCues.some(cue => cue.id === shown.id))) {
       void updateStage(present({ ...shown, theme: item.theme }, stage.revision))
     }
-    setEditor(null)
+    finishCueEdit(item.kind)
   }
 
-  function createSlideLibrary(parent: string, name: string) {
+  function createSlideLibrary(name: string) {
     if (!loaded) return saveError || t('Wait for the workspace to finish loading.')
     const folder = normalizeTextSlideFolder(name)
     if (!folder) return t('Enter a library name.')
@@ -397,16 +482,16 @@ export default function Studio() {
       return t('A slide library with this name already exists.')
     }
     setProject(current => ({ ...current, slideLibraries: [...current.slideLibraries, folder] }))
-    setEditor({ kind: 'text-library', parent, folder })
+    showLibrary(folder)
   }
 
-  function saveLibraryTextSlide(parent: string, slide: TextSlide, folder: string) {
+  function saveLibraryTextSlide(slide: TextSlide, folder: string) {
     if (!project.slideLibraries.includes(folder)) return t('This slide library is unavailable.')
     setProject(current => ({
       ...current,
       textLibrary: [...current.textLibrary.filter(item => item.slide.id !== slide.id), { folder, slide }],
     }))
-    setEditor({ kind: 'text-library', parent, selectedId: slide.id })
+    showLibrary(folder, slide.id)
   }
 
   async function addSource() {
@@ -422,17 +507,23 @@ export default function Studio() {
     void addSource().catch(reason => tell(errorText(reason), true))
   }
 
-  function openEditor(kind: AddCueKind, parent: string) {
-    if (kind === 'video' || kind === 'audio') {
-      setEditor({ kind: 'media', parent, filter: kind })
+  function openCueTool(kind: AddCueKind, parent: string) {
+    if (kind === 'playlist') {
+      setEditor({ kind, parent })
       return
     }
-    setEditor({ kind: kind === 'text' ? 'text-library' : kind, parent })
+    const tool = kind === 'video' || kind === 'audio' ? 'media' : kind
+    setEditor(null)
+    setDestinations(current => ({ ...current, [tool]: parent }))
+    if (tool === 'media') setMediaFilter(kind === 'video' || kind === 'audio' ? kind : 'all')
+    if (tool === 'scripture') setScriptureEdit(undefined)
+    if (tool === 'text') setTextPanel({ kind: 'library' })
+    activateTab(tool, true)
   }
 
   function cueMenuItems(parent: string, className?: string) {
     return cueActions.map(({ kind, label, shortcut }) => (
-      <button type="button" key={kind} className={className} onClick={() => openEditor(kind, parent)}
+      <button type="button" key={kind} className={className} onClick={() => openCueTool(kind, parent)}
         aria-keyshortcuts={shortcut ? `Control+${shortcut}` : undefined}>
         {kind === 'media' ? <LibraryBig size={16} aria-hidden="true" /> : <ItemIcon kind={kind} size={14} />}
         {t(label)}
@@ -443,8 +534,10 @@ export default function Studio() {
 
   function editItem(item: Item, parent: string) {
     if (item.kind === 'text' || item.kind === 'scripture') {
-      if (item.kind === 'text') setEditor({ kind: 'text', parent, existing: item })
-      else setEditor({ kind: 'scripture', parent, existing: item })
+      setDestinations(current => ({ ...current, [item.kind]: parent }))
+      if (item.kind === 'text') setTextPanel({ kind: 'cue', existing: item })
+      else setScriptureEdit(item)
+      activateTab(item.kind, true)
     } else setEditor({ kind: 'rename', parent, existing: item })
   }
 
@@ -466,22 +559,34 @@ export default function Studio() {
       if (!remaining.length) return
       setProject(current => ({ ...current, playlists: remaining, activeId: remaining[0].id }))
       setCueId(flatten(remaining[0].children)[0]?.id ?? null)
+      showCueList()
     } else {
       const removedSelected = flatten([item]).some(cue => cue.id === cueId)
       const withoutItem = (root: Group) => updateGroup(root, parent, group => ({
         ...group, children: group.children.filter(child => child.id !== item.id),
       }))
+      const updated = withoutItem(active)
+      const containsCue = (destination: Group, id: string) =>
+        playlistPath(updated, destination.id)?.at(-1)?.children.some(child => child.id === id)
+      if (scriptureEdit && !containsCue(scriptureTarget, scriptureEdit.id)) setScriptureEdit(undefined)
+      if (textPanel.kind === 'cue' && textPanel.existing && !containsCue(textTarget, textPanel.existing.id)) {
+        setTextPanel({ kind: 'library' })
+      }
       updatePlaylist(withoutItem)
-      if (removedSelected) setCueId(flatten(withoutItem(active).children)[index]?.id ?? null)
+      if (removedSelected) setCueId(flatten(updated.children)[index]?.id ?? null)
     }
     setEditor(null)
   }
 
   function addPlaylist(name: string, parent: string | null) {
     const group: Group = { id: crypto.randomUUID(), kind: 'playlist', title: name, children: [] }
-    if (parent) { addItem(parent, group); return }
+    if (parent) {
+      if (addItem(parent, group)) setEditor(null)
+      return
+    }
     setProject(current => ({ ...current, playlists: [...current.playlists, group], activeId: group.id }))
     setCueId(null)
+    showCueList()
     setEditor(null)
   }
 
@@ -498,12 +603,6 @@ export default function Studio() {
 
   const title = editor?.kind === 'playlist' ? (editor.parent ? t('New nested playlist') : t('New playlist'))
     : editor?.kind === 'rename' ? t(editor.existing.kind === 'playlist' ? 'Rename playlist' : 'Rename cue')
-    : editor?.kind === 'text' ? (editor.existing ? t('Edit text slide') : t('New one-off text slide'))
-    : editor?.kind === 'text-library' ? t('Text slide library')
-    : editor?.kind === 'new-slide-library' ? t('New slide library')
-    : editor?.kind === 'library-text' ? (editor.existing ? t('Edit saved text slide') : t('New text slide'))
-    : editor?.kind === 'scripture' ? (editor.existing ? t('Edit scripture cue') : t('Bible lookup'))
-    : editor?.kind === 'media' ? t('Add Media')
     : editor?.kind === 'kiosk-background' ? t('Kiosk background')
     : editor?.kind === 'remove' ? t('Remove from workspace')
     : t('Add cue')
@@ -563,16 +662,6 @@ export default function Studio() {
                 </button>
               ))}
             </section>
-            <section className="sidebar-section">
-              <div className="sidebar-heading"><h2>{t('Library')}</h2></div>
-              {libraryItems.map(({ kind, label, shortcut, icon: Icon }) => (
-                <button type="button" key={kind} className="sidebar-item"
-                  onClick={() => openEditor(kind, active.id)} aria-keyshortcuts={`Control+${shortcut}`}>
-                  <Icon size={17} aria-hidden="true" /><span>{t(label)}</span>
-                  <kbd className="cue-shortcut" aria-hidden="true">Ctrl+{shortcut}</kbd>
-                </button>
-              ))}
-            </section>
             <section className="sidebar-section sidebar-section--media-sources">
               <div className="sidebar-heading"><h2>{t('Media sources')}</h2><button className="icon-button" title={t('Add source folder')} aria-label={t('Add source folder')} onClick={addSourceFromSidebar}><Plus size={17} /></button></div>
               {project.sources.map(source => (
@@ -589,16 +678,16 @@ export default function Studio() {
               <div className="sidebar-heading">
                 <h2 id="slide-libraries-heading">{t('Slides')}</h2>
                 <button type="button" className="icon-button" title={t('New slide library')} aria-label={t('New slide library')}
-                  onClick={() => setEditor({ kind: 'new-slide-library', parent: active.id })}><Plus size={17} /></button>
+                  onClick={() => { setTextPanel({ kind: 'new-library' }); activateTab('text', true) }}><Plus size={17} /></button>
               </div>
               {[...project.slideLibraries].sort((a, b) => a.localeCompare(b, language)).map(folder => (
                 <button type="button" key={folder} className="sidebar-item" title={folder}
-                  onClick={() => setEditor({ kind: 'text-library', parent: active.id, folder })}>
+                  onClick={() => { showLibrary(folder); activateTab('text', true) }}>
                   <FolderOpen size={17} aria-hidden="true" /><span>{folder}</span>
                 </button>
               ))}
               {!project.slideLibraries.length && (
-                <button type="button" className="add-folder" onClick={() => setEditor({ kind: 'new-slide-library', parent: active.id })}>
+                <button type="button" className="add-folder" onClick={() => { setTextPanel({ kind: 'new-library' }); activateTab('text', true) }}>
                   <FolderPlus size={16} aria-hidden="true" /> {t('New library')}
                 </button>
               )}
@@ -628,11 +717,18 @@ export default function Studio() {
 
             {(saveError || stage.error) && <div className="problem" role="alert"><CircleAlert size={17} /> {translateError(t, saveError || stage.error || '')}</div>}
 
-            <section className="cue-section" aria-labelledby="cues-heading">
-              <header>
-                <h2 id="cues-heading">{t('Cue list')}</h2>
-              </header>
-              <div className="cue-scroll">
+            <div className="cue-workspace">
+              <div className="workspace-tabs" role="tablist" aria-label={t('Presentation workspace')} ref={workspaceTabList} onKeyDown={navigateTabs}>
+                {workspaceTabs.map(({ id, label, icon: Icon, shortcut }) => (
+                  <button key={id} type="button" role="tab" id={`workspace-tab-${id}`} aria-controls={`workspace-panel-${id}`}
+                    aria-selected={tab === id} tabIndex={tab === id ? 0 : -1}
+                    aria-keyshortcuts={shortcut ? `Control+${shortcut}` : undefined} onClick={() => activateTab(id)}>
+                    <Icon size={15} aria-hidden="true" /> {t(label)}
+                  </button>
+                ))}
+              </div>
+              <section id="workspace-panel-cues" role="tabpanel" aria-labelledby="workspace-tab-cues" className="cue-scroll"
+                tabIndex={0} hidden={tab !== 'cues'}>
                 <CueList root={active} selectedId={cueId} expanded={expanded}
                   current={stage.cue ? {
                     id: stage.cue.id,
@@ -648,8 +744,90 @@ export default function Studio() {
                   onAdd={parent => setEditor({ kind: 'choose', parent })}
                   onRemove={(item, parent) => setEditor({ kind: 'remove', parent, item })}
                 />
-              </div>
-            </section>
+              </section>
+
+              <section id="workspace-panel-media" role="tabpanel" aria-labelledby="workspace-tab-media" className="tool-panel"
+                tabIndex={0} hidden={tab !== 'media'}>
+                {mediaTarget !== active && <p className="workspace-context">{t('Adding to {name}', { name: mediaTarget.title })}</p>}
+                <MediaBrowser sources={project.sources} filter={mediaFilter} onFilterChange={setMediaFilter}
+                  view={mediaView} onViewChange={setMediaView} onAddFolder={addSource} busy={transmitting}
+                  onSave={file => addWorkspaceItem(mediaTarget.id, mediaCue(file))} onLive={file => void send(mediaCue(file), 'keep-queue')} />
+              </section>
+
+              <section id="workspace-panel-scripture" role="tabpanel" aria-labelledby="workspace-tab-scripture" className="tool-panel"
+                tabIndex={0} hidden={tab !== 'scripture'}>
+                {scriptureEdit ? (
+                  <>
+                    <div className="workspace-context">
+                      <h2>{t('Edit scripture cue')}</h2>
+                      <button type="button" className="button" onClick={() => finishCueEdit('scripture')}>{t('Cancel')}</button>
+                    </div>
+                    <ScriptureEditor key={scriptureEdit.id} existing={scriptureEdit}
+                      active={tab === 'scripture'} settingsRevision={bibleSettingsRevision} busy={transmitting}
+                      onSave={cue => saveItem(scriptureTarget.id, cue, scriptureEdit)} onLive={cue => void send(cue, 'keep-queue')} />
+                  </>
+                ) : scriptureTarget !== active && <p className="workspace-context">{t('Adding to {name}', { name: scriptureTarget.title })}</p>}
+                <div hidden={!!scriptureEdit}>
+                  <ScriptureEditor active={tab === 'scripture' && !scriptureEdit} settingsRevision={bibleSettingsRevision} busy={transmitting}
+                    onSave={cue => addWorkspaceItem(scriptureTarget.id, cue)} onLive={cue => void send(cue, 'keep-queue')} />
+                </div>
+              </section>
+
+              <section id="workspace-panel-text" role="tabpanel" aria-labelledby="workspace-tab-text" className="tool-panel"
+                tabIndex={0} hidden={tab !== 'text'}>
+                <div hidden={textPanel.kind !== 'library'}>
+                  <TextSlideLibrary items={project.textLibrary} libraries={project.slideLibraries} playlists={project.playlists} parent={textTarget.id}
+                    key={libraryLocation.revision} selectedId={libraryLocation.selectedId} initialFolder={libraryLocation.folder} busy={transmitting}
+                    saving={loaded && !saveError && (persistedTextLibrary !== project.textLibrary || persistedSlideLibraries !== project.slideLibraries)}
+                    error={saveError}
+                    onCreateLibrary={() => setTextPanel({ kind: 'new-library' })}
+                    onCreateOneOff={() => setTextPanel({ kind: 'cue' })}
+                    onCreate={folder => setTextPanel({ kind: 'saved-slide', folder })}
+                    onEdit={item => setTextPanel({ kind: 'saved-slide', folder: item.folder, existing: item.slide })}
+                    onAdd={(item, parent, root) => addWorkspaceItem(parent, copyLibraryTextSlide(item), root)}
+                    onLive={item => sendTextSlide(copyLibraryTextSlide(item))} />
+                </div>
+                {textPanel.kind === 'new-library' && (
+                  <>
+                    <div className="workspace-context">
+                      <h2>{t('New slide library')}</h2>
+                      <button type="button" className="button" onClick={() => setTextPanel({ kind: 'library' })}>{t('Cancel')}</button>
+                    </div>
+                    <NameEditor label={t('Library name')} action={t('Create library')} onSave={createSlideLibrary} />
+                  </>
+                )}
+                {textPanel.kind === 'cue' && (
+                  <>
+                    <div className="workspace-context">
+                      <h2>{t(textPanel.existing ? 'Edit text slide' : 'New one-off text slide')}</h2>
+                      <button type="button" className="button" onClick={() => {
+                        if (textPanel.existing) finishCueEdit('text')
+                        else setTextPanel({ kind: 'library' })
+                      }}>{t('Cancel')}</button>
+                    </div>
+                    {!textPanel.existing && textTarget !== active && <p className="workspace-context">{t('Adding to {name}', { name: textTarget.title })}</p>}
+                    <TextEditor key={textPanel.existing?.id ?? 'one-off'} existing={textPanel.existing} busy={transmitting}
+                      onSave={slide => {
+                        if (textPanel.existing) saveItem(textTarget.id, slide, textPanel.existing)
+                        else addWorkspaceItem(textTarget.id, copyLibraryTextSlide({ folder: '', slide }))
+                      }}
+                      onLive={textPanel.existing ? undefined : sendTextSlide} />
+                  </>
+                )}
+                {textPanel.kind === 'saved-slide' && (
+                  <>
+                    <div className="workspace-context">
+                      <h2>{t(textPanel.existing ? 'Edit saved text slide' : 'New text slide')}</h2>
+                    </div>
+                    <TextEditor existing={textPanel.existing} library={{
+                      folder: textPanel.folder,
+                      onBack: () => setTextPanel({ kind: 'library' }),
+                      onSave: slide => saveLibraryTextSlide(slide, textPanel.folder),
+                    }} />
+                  </>
+                )}
+              </section>
+            </div>
           </div>
         </main>
       </div>
@@ -666,48 +844,14 @@ export default function Studio() {
         <button className="icon-button" aria-label={t('Dismiss message')} onClick={() => setNotice(null)}><X size={16} /></button>
       </div>}
 
-      {editor?.kind === 'settings' && <SettingsDialog onClose={() => setEditor(null)} />}
-      {editor && editor.kind !== 'settings' && <Dialog key={editor.kind} title={title}
-        wide={editor.kind === 'media' || editor.kind === 'scripture' || editor.kind === 'text-library'}
-        pinActions={editor.kind === 'text' || editor.kind === 'library-text' || editor.kind === 'scripture'}
-        onClose={() => setEditor(null)}>
+      {editor?.kind === 'settings' && <SettingsDialog onClose={() => setEditor(null)}
+        onBibleChange={() => setBibleSettingsRevision(revision => revision + 1)} />}
+      {editor && editor.kind !== 'settings' && <Dialog key={editor.kind} title={title} onClose={() => setEditor(null)}>
         {editor.kind === 'choose' && <div className="add-cue-options">
           {cueMenuItems(editor.parent, 'button')}
         </div>}
         {editor.kind === 'playlist' && <NameEditor label={t('Playlist name')} action={t('Create playlist')} onSave={name => addPlaylist(name, editor.parent)} />}
         {editor.kind === 'rename' && <NameEditor label={t('Name')} action={t('Save changes')} existing={editor.existing} onSave={name => rename(editor.existing, editor.parent, name)} />}
-        {editor.kind === 'text-library' && (
-          <TextSlideLibrary items={project.textLibrary} libraries={project.slideLibraries} playlists={project.playlists} parent={editor.parent}
-            selectedId={editor.selectedId} initialFolder={editor.folder} busy={transmitting}
-            saving={loaded && !saveError && (persistedTextLibrary !== project.textLibrary || persistedSlideLibraries !== project.slideLibraries)}
-            error={saveError}
-            onCreateLibrary={() => setEditor({ kind: 'new-slide-library', parent: editor.parent })}
-            onCreateOneOff={() => setEditor({ kind: 'text', parent: editor.parent })}
-            onCreate={folder => setEditor({ kind: 'library-text', parent: editor.parent, folder })}
-            onEdit={item => setEditor({ kind: 'library-text', parent: editor.parent, folder: item.folder, existing: item.slide })}
-            onAdd={(item, parent, root) => addItem(parent, copyLibraryTextSlide(item), root)}
-            onLive={item => sendTextSlide(copyLibraryTextSlide(item))} />
-        )}
-        {editor.kind === 'new-slide-library' && (
-          <NameEditor label={t('Library name')} action={t('Create library')} onSave={name => createSlideLibrary(editor.parent, name)} />
-        )}
-        {editor.kind === 'text' && (
-          <TextEditor existing={editor.existing} busy={transmitting}
-            onSave={slide => saveItem(editor.parent, slide, editor.existing)}
-            onLive={editor.existing ? undefined : sendTextSlide} />
-        )}
-        {editor.kind === 'library-text' && (
-          <TextEditor existing={editor.existing} library={{
-            folder: editor.folder,
-            onBack: () => setEditor({ kind: 'text-library', parent: editor.parent, folder: editor.folder, selectedId: editor.existing?.id }),
-            onSave: slide => saveLibraryTextSlide(editor.parent, slide, editor.folder),
-          }} />
-        )}
-        {editor.kind === 'scripture' && <ScriptureEditor existing={editor.existing} busy={transmitting} onSave={cue => saveItem(editor.parent, cue, editor.existing)} onLive={cue => void send(cue, 'close-editor')} />}
-        {editor.kind === 'media' && <MediaBrowser sources={project.sources} initialFilter={editor.filter}
-          view={mediaView} onViewChange={setMediaView} onAddFolder={addSource} busy={transmitting}
-          onSave={file => addItem(editor.parent, mediaCue(file))} onLive={file => void send(mediaCue(file), 'close-editor')}
-        />}
         {editor.kind === 'kiosk-background' && <KioskBackgroundEditor background={background} loadError={backgroundError} />}
         {editor.kind === 'remove' && <div className="editor">
           <p>{t(editor.item.kind === 'text' ? 'Remove “{name}” and its slides?'

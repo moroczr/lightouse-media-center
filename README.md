@@ -18,9 +18,9 @@ To package the app on the current platform, run `npm run tauri build`. On macOS,
 ## Present
 
 1. Select an audience display and click **Launch Kiosk**. With one display, Kiosk opens in a movable, resizable window. With multiple displays, it opens full-screen on the selected display.
-2. Choose a playlist and click a cue to see it in **Next up**. **Previous** and **Next** move the queued selection without changing the current audience output.
+2. Choose a playlist and click a cue in **Cue List** to see it in **Next up**. **Previous** and **Next** move the queued selection without changing the current audience output.
 3. Click **Go live** to take the queued cue live and queue the next item. Nested playlists play in order, depth first. Groups can be expanded or collapsed independently of that order.
-4. To show a one-off item, open **Add Media**, **Bible lookup**, or **Text slide** and select **Send to Kiosk**. The queued playlist item stays in place. In Studio, press **Ctrl+M** for Add Media, **Ctrl+B** for Bible lookup, or **Ctrl+T** for Text slide.
+4. Use the **Media**, **Bible lookup**, and **Text slides** tabs to prepare cues. Select **Add to playlist** to save a cue or **Send to Kiosk** to present it directly while keeping your place in the cue list. Press **Ctrl+M**, **Ctrl+B**, or **Ctrl+T** to open those tabs.
 5. When video or audio is live, use the controls under **Live output** to play, pause, stop and rewind, seek, or skip 10 seconds in either direction. For a Bible verse, **Previous verse** and **Next verse** under **Live output** change the displayed verse without advancing the playlist. The vertical Kiosk volume and mute controls beside **Next up** are available before and during playback, including when a text or Bible verse cue is live.
 6. Click **Blackout** or press **B** in Studio. It hides the audience picture while audio continues. Press **Escape** in the Kiosk to close it.
 
@@ -28,11 +28,11 @@ Use the **Kiosk background** image button beside **Launch Kiosk** to choose a PN
 
 Use the sidebar toggle at the top left to hide or restore the playlists and library.
 
-Under **Slides** in the sidebar, choose **New library** and enter a name such as `Worships`. Open a library, choose **New text slide**, and select **Save to library**. The caption also names the slide. If it is blank, the first text entry supplies the caption and its first line supplies the name. Select a saved set to edit it, add a copy to any playlist, or send it directly to Kiosk. The **Previous slide** and **Next slide** buttons under **Live output** navigate a set sent directly. Open **Text slide** for an overview of all libraries or choose **One-off text slide** to add or send text for a single use.
+Under **Slides** in the sidebar, choose **New library** and enter a name such as `Worships`. Open a library, choose **New text slide**, and select **Save to library**. The caption also names the slide. If it is blank, the first text entry supplies the caption and its first line supplies the name. Select a saved set to edit it, add a copy to any playlist, or send it directly to Kiosk. The **Previous slide** and **Next slide** buttons under **Live output** navigate a set sent directly. Open the **Text slides** tab for an overview of all libraries or choose **One-off text slide** to add or send text for a single use.
 
 Open **Settings → Slides** to add PNG, JPEG, or WebP backgrounds and set separate default themes for new text slides and Bible verse cues. Built-in themes and imported images are available in each slide’s **Background** picker. Changing the default only affects new slides.
 
-Add folders under **Media sources**, then open **Add Media** to search across those folders and their subfolders. Switch between list and tile views, filter by **Movies** or **Audio**, and select a file to add to the playlist or send to Kiosk. Use **Open file** for a file outside your sources. The app keeps references to the original files. For cross-platform playback, start with H.264/AAC video in MP4 and MP3 or WAV audio. Additional codecs depend on the system WebView.
+Add folders under **Media sources**, then open the **Media** tab to search across those folders and their subfolders. Switch between list and tile views, filter by **Movies** or **Audio**, and select a file to add to the playlist or send to Kiosk. Use **Open file** for a file outside your sources. The app keeps references to the original files. For cross-platform playback, start with H.264/AAC video in MP4 and MP3 or WAV audio. Additional codecs depend on the system WebView.
 
 Change the interface language under **Settings → General → Language**. Choose **English** or **Magyar** (Hungarian). The app remembers your choice.
 

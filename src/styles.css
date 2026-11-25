@@ -295,13 +295,39 @@ button.icon-button:disabled { opacity: .35; }
 }
 .transport .button-primary { min-width: 101px; }
 
-.cue-section {
+.cue-workspace {
   --cue-space: 18px;
   display: flex; flex-direction: column; min-height: 0;
   border: 1px solid var(--line); background: var(--sidebar); border-radius: 9px;
 }
-.cue-section > header { display: flex; flex: none; align-items: center; min-height: 30px; border-bottom: 1px solid var(--line); padding: 0 10px; }
-.cue-section h2 { font-size: 12px; font-weight: 830; }
+.workspace-tabs {
+  display: flex; flex: none; gap: 4px; padding: 4px 6px;
+  border-bottom: 1px solid var(--line); background: var(--surface); border-radius: 8px 8px 0 0;
+}
+.workspace-tabs button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px;
+  padding: 0 10px; border: 1px solid transparent; border-radius: 6px; background: transparent;
+  color: var(--muted); font-size: 12px; font-weight: 790;
+}
+.workspace-tabs button:hover { color: var(--ink); background: var(--hover); }
+.workspace-tabs button[aria-selected="true"] {
+  color: var(--accent-text); background: var(--accent-strong); border-color: var(--accent-border);
+}
+.cue-scroll, .tool-panel { outline-offset: -3px; }
+.tool-panel {
+  min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 12px; scroll-padding-bottom: 68px;
+}
+.tool-panel :is(.editor-form > .dialog-actions, .editor > .dialog-actions, .media-footer) {
+  position: sticky; bottom: -12px; z-index: 2; padding-block: 8px;
+  border-top: 1px solid var(--line); background: var(--sidebar);
+}
+.tool-panel .media-results { height: clamp(128px, 25dvh, 320px); }
+.workspace-context {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px;
+}
+.workspace-context h2 { font-size: 15px; color: var(--ink); }
+.workspace-context .button { min-height: 30px; }
 .cue-scroll { min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .cue-rows { list-style: none; margin: 0; padding: 0; }
 .cue-scroll > .cue-rows { padding: 3px 5px; }
@@ -349,12 +375,8 @@ button.icon-button:disabled { opacity: .35; }
   background: var(--raised); color: var(--ink); border: 1px solid var(--border-hover); border-radius: 14px;
   padding: 0; box-shadow: 0 24px 90px #060d13df;
 }
-.dialog--wide { width: min(810px, calc(100% - 32px)); }
 .dialog::backdrop { background: #081017c9; backdrop-filter: blur(3px); }
 .dialog-body { padding: 18px 19px; }
-.dialog--pinned-actions[open] { display: flex; flex-direction: column; overflow: hidden; }
-.dialog--pinned-actions .dialog-body { display: flex; flex-direction: column; min-height: 0; }
-.dialog--pinned-actions .dialog-header { flex: none; }
 .editor-form { display: flex; flex-direction: column; min-height: 0; }
 .editor-form > .editor-content {
   min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 4px; margin: -4px;
@@ -579,6 +601,10 @@ button.icon-button:disabled { opacity: .35; }
   .cue-kind { display: none; }
 }
 
+@media (max-width: 420px) {
+  .workspace-tabs svg { display: none; }
+}
+
 @media (max-width: 700px) {
   .appbar { flex-wrap: wrap; padding-inline: 8px; }
   .playlist-controls, .display-controls { gap: 4px; }
@@ -592,12 +618,16 @@ button.icon-button:disabled { opacity: .35; }
   .sidebar-content { padding: 8px 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .sidebar-section + .sidebar-section { margin-top: 0; }
   .sidebar-section--media-sources { display: none; }
-  .sidebar-section--slides { grid-column: 1 / -1; }
   .sidebar-heading { margin-bottom: 3px; }
   .sidebar-foot { display: none; }
   .main { flex: 0 0 auto; overflow: visible; }
   .main-inner { height: auto; padding: 10px 8px; }
-  .cue-scroll { overflow: visible; }
+  .cue-scroll, .tool-panel { overflow: visible; }
+  .workspace-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; padding-inline: 4px; }
+  .workspace-tabs button { padding: 2px 4px; font-size: 11px; }
+  .tool-panel { padding: 8px; }
+  .tool-panel :is(.editor-form > .dialog-actions, .editor > .dialog-actions, .media-footer) { position: static; }
+  .tool-panel .media-toolbar, .tool-panel .media-footer { flex-wrap: wrap; }
   .preview-heading { min-height: 31px; }
   .preview-panel--next .preview-heading h2 svg { display: none; }
   .preview-caption { min-height: 26px; font-size: 10px; }

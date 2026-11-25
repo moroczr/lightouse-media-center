@@ -7,7 +7,7 @@ import { type MediaFile, type Source } from '../shared/model'
 import { ItemIcon } from './CueList'
 
 export type MediaView = 'list' | 'tile'
-type MediaFilter = 'all' | MediaFile['kind']
+export type MediaFilter = 'all' | MediaFile['kind']
 type CatalogItem = MediaFile & { location: string }
 
 const filters: { value: MediaFilter; label: Message }[] = [
@@ -25,9 +25,10 @@ function fileLocation(file: MediaFile, source: Source) {
   return [source.name, ...folders].join(' / ')
 }
 
-export function MediaBrowser({ sources, initialFilter = 'all', view, onViewChange, onAddFolder, busy, onSave, onLive }: {
+export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChange, onAddFolder, busy, onSave, onLive }: {
   sources: Source[];
-  initialFilter?: MediaFilter;
+  filter: MediaFilter;
+  onFilterChange: (filter: MediaFilter) => void;
   view: MediaView;
   onViewChange: (view: MediaView) => void;
   onAddFolder: () => Promise<void>;
@@ -36,7 +37,6 @@ export function MediaBrowser({ sources, initialFilter = 'all', view, onViewChang
   onLive: (file: MediaFile) => void;
 }) {
   const { t } = useLanguage()
-  const [filter, setFilter] = useState(initialFilter)
   const [query, setQuery] = useState('')
   const [selectedPath, setSelectedPath] = useState<string>()
   const [openedFile, setOpenedFile] = useState<MediaFile>()
@@ -166,7 +166,7 @@ export function MediaBrowser({ sources, initialFilter = 'all', view, onViewChang
         <div className="media-segment" role="group" aria-label={t('Media type')}>
           {filters.map(option => (
             <button key={option.value} className="button" aria-pressed={filter === option.value}
-              onClick={() => setFilter(option.value)}>{t(option.label)}</button>
+              onClick={() => onFilterChange(option.value)}>{t(option.label)}</button>
           ))}
         </div>
         <div className="media-segment" role="group" aria-label={t('Media view')}>

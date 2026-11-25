@@ -24,8 +24,10 @@ type Navigation = { search: PassageVerse; start: PassageVerse; selected: Passage
 type VerseWindow = Awaited<ReturnType<typeof readVerseWindow>>
 type LoadResult<T> = { key: string; values: T[] } | { key: string; error: string }
 
-export function ScriptureEditor({ existing, busy, onSave, onLive }: {
+export function ScriptureEditor({ existing, active, settingsRevision, busy, onSave, onLive }: {
   existing?: ScriptureCue;
+  active: boolean;
+  settingsRevision: number;
   busy: boolean;
   onSave: (cue: ScriptureCue) => void;
   onLive: (cue: ScriptureCue) => void;
@@ -110,12 +112,16 @@ export function ScriptureEditor({ existing, busy, onSave, onLive }: {
     || (verses && 'error' in verses ? verses.error : '')
 
   useEffect(() => {
-    let active = true
+    if (!active) return
+    let current = true
     void bible.settings().then(values => {
-      if (active) setSettings(values)
-    }).catch(reason => { if (active) setTranslationError(String(reason)) })
-    return () => { active = false }
-  }, [])
+      if (current) {
+        setSettings(values)
+        setTranslationError('')
+      }
+    }).catch(reason => { if (current) setTranslationError(String(reason)) })
+    return () => { current = false }
+  }, [active, settingsRevision])
 
   useEffect(() => {
     if (!translation) return
