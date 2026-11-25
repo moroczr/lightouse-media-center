@@ -3,11 +3,12 @@ import type { ItemKind } from '../shared/model'
 
 export type CueDropTarget = 'live' | 'next'
 
-export interface CueDragItem {
-  cueId: string
-  title: string
-  kind: ItemKind
-}
+export type CueDragItem = { title: string; kind: ItemKind } & (
+  | { cueId: string }
+  | { preview: () => void; live: () => void }
+)
+
+export type CueDragStart = (event: PointerEvent<HTMLButtonElement>, item: CueDragItem) => void
 
 interface CueDrag {
   item: CueDragItem
@@ -58,6 +59,8 @@ export function useCueDrag(onDrop: (id: string, target: CueDropTarget) => void) 
 
   function start(event: PointerEvent<HTMLButtonElement>, item: CueDragItem) {
     if (!event.isPrimary || event.button !== 0 || event.pointerType === 'touch') return
+    // Result rows select on focus, so defer focus to their click handler.
+    if (!('cueId' in item)) event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     drag.current = { item, pointerId: event.pointerId, x: event.clientX, y: event.clientY, started: false }
   }
@@ -85,7 +88,11 @@ export function useCueDrag(onDrop: (id: string, target: CueDropTarget) => void) 
     setPreview(null)
     if (event.type === 'pointerup') {
       const destination = targetAt(event)
-      if (destination) onDrop(current.item.cueId, destination)
+      if (!destination) return
+      const { item } = current
+      if ('cueId' in item) onDrop(item.cueId, destination)
+      else if (destination === 'next') item.preview()
+      else item.live()
     }
   }
 

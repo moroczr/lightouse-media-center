@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { ChevronRight, Folder, FolderPlus, LayoutGrid, List, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { Audience } from '../shared/Audience'
 import { useLanguage } from '../shared/i18n'
@@ -7,6 +7,7 @@ import { textSlideCues, type LibraryTextSlide, type Theme } from '../shared/mode
 import { BackgroundPicker } from './BackgroundPicker'
 import { ItemIcon } from './CueList'
 import { AddToPlaylistButton, SendToKioskButton } from './Editors'
+import type { CueDragStart } from './useCueDrag'
 
 function RowAction({ icon: Icon, label, disabled, danger, onClick }: {
   icon: typeof Pencil
@@ -39,6 +40,7 @@ type TextLibraryActions =
     onDelete: (item: LibraryTextSlide) => void
     onPreview: (item: LibraryTextSlide | undefined) => void
     onLive: (item: LibraryTextSlide) => void
+    onCuePointerDown: CueDragStart
   }
 
 export function TextSlideLibrary({
@@ -192,6 +194,12 @@ export function TextSlideLibrary({
               const name = row.kind === 'folder' ? row.name : row.item.slide.title
               const cues = item ? textSlideCues(item.slide) : []
               const count = cues.length
+              const startDrag = item && actions.kind === 'browse' && !busy
+                ? (event: PointerEvent<HTMLButtonElement>) => actions.onCuePointerDown(event, {
+                  title: name, kind: 'text',
+                  preview: () => setSelection(row.key),
+                  live: () => actions.onLive(item),
+                }) : undefined
               return (
                 <li key={row.key} className="text-library-row" onFocus={() => setSelection(row.key)}>
                   {mosaic && (
@@ -199,8 +207,8 @@ export function TextSlideLibrary({
                       {item ? <Audience cue={cues[0] ? { ...cues[0], theme } : null} /> : <Folder size={36} />}
                     </div>
                   )}
-                  <button type="button" className="media-result text-library-row-main" title={name}
-                    aria-pressed={item ? index === selectedIndex : undefined}
+                  <button type="button" className={`media-result text-library-row-main${startDrag ? ' cue-draggable' : ''}`}
+                    title={name} onPointerDown={startDrag} aria-pressed={item ? index === selectedIndex : undefined}
                     tabIndex={index === Math.max(0, selectedIndex) ? 0 : -1}
                     onClick={event => {
                       if (row.kind === 'folder') openFolder(row.path)

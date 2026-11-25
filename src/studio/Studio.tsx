@@ -778,7 +778,8 @@ export default function Studio() {
               stage={stage} standby={standby} background={background?.url} next={next}
               nextError={resolved?.error ?? ''} browsing={!!browserPreview}
               kiosk={kiosk} busy={transmitting}
-              dropTarget={drag.preview?.target ?? null} onBlackout={toggleBlackout}
+              dropTarget={drag.preview?.target ?? null} browserDrag={!!drag.preview && !('cueId' in drag.preview.item)}
+              onBlackout={toggleBlackout}
               onNavigateVerse={showAdjacentVerse}
               textNavigation={liveTextIndex >= 0 && liveTextCues.length > 1 ? {
                 index: liveTextIndex, total: liveTextCues.length, onMove: showAdjacentTextSlide,
@@ -844,7 +845,8 @@ export default function Studio() {
                 tabIndex={0} hidden={tab !== 'media'}>
                 <MediaBrowser sources={project.sources} filter={mediaFilter} onFilterChange={setMediaFilter}
                   view={mediaView} onViewChange={setMediaView} onAddFolder={addSource} busy={transmitting}
-                  onPreview={setMediaSelection} onLive={file => void send(mediaCue(file), 'keep-queue')} />
+                  onPreview={setMediaSelection} onLive={file => void send(mediaCue(file), 'keep-queue')}
+                  onCuePointerDown={drag.start} />
               </section>
 
               <section id="workspace-panel-scripture" role="tabpanel" aria-labelledby="workspace-tab-scripture" className="tool-panel scripture-panel"
@@ -864,7 +866,8 @@ export default function Studio() {
                 <div className="scripture-lookup" hidden={!!scriptureEdit}>
                   <ScriptureEditor active={tab === 'scripture' && !scriptureEdit} settingsRevision={bibleSettingsRevision} busy={transmitting}
                     view={scriptureView} onViewChange={setScriptureView}
-                    onPreview={setVersePreview} onLive={cue => void send(cue, 'keep-queue')} />
+                    onPreview={setVersePreview} onLive={cue => void send(cue, 'keep-queue')}
+                    onCuePointerDown={drag.start} />
                 </div>
               </section>
 
@@ -887,6 +890,7 @@ export default function Studio() {
                       onEdit: item => setTextPanel({ kind: 'saved-slide', folder: item.folder, existing: item.slide }),
                       onDelete: item => setEditor({ kind: 'delete-saved-slide', item }),
                       onPreview: setSlideSelection,
+                      onCuePointerDown: drag.start,
                       onLive: item => sendTextSlide(copyLibraryTextSlide(item)),
                     }} />
                 </div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { Check, ChevronRight, CircleAlert, Folder, FolderOpen, FolderPlus, LayoutGrid, List, Search } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError, type Message } from '../shared/messages'
@@ -6,6 +6,7 @@ import { desktop, listMedia, pickMedia } from '../shared/bridge'
 import { type MediaFile, type Source } from '../shared/model'
 import { ItemIcon } from './CueList'
 import { AddToPlaylistButton, SendToKioskButton } from './Editors'
+import type { CueDragStart } from './useCueDrag'
 
 export type MediaView = 'list' | 'tile'
 export type MediaFilter = 'all' | MediaFile['kind']
@@ -27,7 +28,7 @@ function fileLocation(file: MediaFile, source: Source) {
   return [source.name, ...folders].join(' / ')
 }
 
-export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChange, onAddFolder, busy, onSave, onPreview, onLive }: {
+export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChange, onAddFolder, busy, onSave, onPreview, onLive, onCuePointerDown }: {
   sources: Source[];
   filter: MediaFilter;
   onFilterChange: (filter: MediaFilter) => void;
@@ -38,6 +39,7 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
   onSave?: (file: MediaFile) => void;
   onPreview?: (file: MediaFile | undefined) => void;
   onLive?: (file: MediaFile) => void;
+  onCuePointerDown?: CueDragStart;
 }) {
   const { t } = useLanguage()
   const [query, setQuery] = useState('')
@@ -226,10 +228,17 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
           <ul ref={resultList} className={`media-entries media-entries--${view}`}>
             {shown.map((item, index) => {
               const isFile = 'kind' in item
+              const startDrag = isFile && onCuePointerDown && onLive && !busy && !picking
+                ? (event: PointerEvent<HTMLButtonElement>) => onCuePointerDown(event, {
+                  title: item.name, kind: item.kind,
+                  preview: () => setSelectedPath(item.path),
+                  live: () => onLive(item),
+                }) : undefined
               return (
                 <li key={item.path} className={isFile && onLive ? 'result-with-send' : undefined}
                   onFocus={() => setSelectedPath(item.path)}>
-                  <button type="button" className="media-result" aria-pressed={isFile ? selectedIndex === index : undefined}
+                  <button type="button" className={startDrag ? 'media-result cue-draggable' : 'media-result'}
+                    aria-pressed={isFile ? selectedIndex === index : undefined} onPointerDown={startDrag}
                     tabIndex={index === Math.max(0, selectedIndex) ? 0 : -1} title={isFile || desktop ? item.path : item.name}
                     onClick={event => {
                       if (!isFile) {

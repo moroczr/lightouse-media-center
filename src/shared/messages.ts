@@ -133,6 +133,7 @@ const hungarian = {
   'Live output': 'Vetített kép',
   'Drop to go live': 'Húzd ide a vetítéshez',
   'Drop to queue': 'Húzd ide az előkészítéshez',
+  'Drop to preview': 'Húzd ide az előnézethez',
   'Kiosk background': 'A vetítő háttere',
   'Live text slide navigation': 'Léptetés a vetített diák között',
   'Previous slide': 'Előző dia',

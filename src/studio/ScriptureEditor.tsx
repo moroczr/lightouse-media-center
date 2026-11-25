@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type PointerEvent } from 'react'
 import { BookOpen, ChevronDown, ChevronRight, ChevronUp, Folder, LayoutGrid, List, Search, X } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError } from '../shared/messages'
@@ -12,6 +12,7 @@ import { useSlideThemes } from '../shared/SlideThemes'
 import { canSearchVerseText } from '../shared/verseSearch'
 import { EditorActions, EditorForm, SendToKioskButton } from './Editors'
 import { BackgroundPicker } from './BackgroundPicker'
+import type { CueDragStart } from './useCueDrag'
 
 const segmentLabels = { book: 'Bible books', chapter: 'Chapters', verse: 'Verses' } as const
 
@@ -39,7 +40,7 @@ function resultOffset(event: KeyboardEvent<HTMLUListElement>, mosaic: boolean) {
   return 0
 }
 
-export function ScriptureEditor({ existing, active, settingsRevision, busy, view, onViewChange, onSave, onPreview, onLive, pickOnly = false }: {
+export function ScriptureEditor({ existing, active, settingsRevision, busy, view, onViewChange, onSave, onPreview, onLive, onCuePointerDown, pickOnly = false }: {
   existing?: ScriptureCue;
   active: boolean;
   settingsRevision: number;
@@ -49,6 +50,7 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, view
   onSave?: (cue: ScriptureCue) => void;
   onPreview?: (cue: AudienceScriptureCue | undefined) => void;
   onLive?: (cue: ScriptureCue) => void;
+  onCuePointerDown?: CueDragStart;
   pickOnly?: boolean;
 }) {
   const { t } = useLanguage()
@@ -585,10 +587,16 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, view
               onKeyDown={navigateVerses} aria-label={byText && filtering ? t('Matching verses') : t('Verses')} aria-busy={!canNavigate}>
               {visible.map(verse => {
                 const label = verseLabel(verse)
+                const startDrag = onCuePointerDown && onLive && themeReady && !busy
+                  ? (event: PointerEvent<HTMLButtonElement>) => onCuePointerDown(event, {
+                    title: label, kind: 'scripture',
+                    preview: () => selectVerse(verse),
+                    live: () => submitCue(onLive, verse),
+                  }) : undefined
                 return <li key={label} className={onLive ? 'result-with-send' : undefined}
                   onFocus={() => { if (label !== title) selectVerse(verse) }}>
-                  <button type="button" className="verse-result" aria-pressed={label === title}
-                    ref={label === title ? selectedRow : undefined}
+                  <button type="button" className={startDrag ? 'verse-result cue-draggable' : 'verse-result'}
+                    aria-pressed={label === title} onPointerDown={startDrag} ref={label === title ? selectedRow : undefined}
                     onClick={event => {
                       event.currentTarget.focus({ preventScroll: true })
                       selectVerse(verse)

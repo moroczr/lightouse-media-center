@@ -405,8 +405,8 @@ button.icon-button:disabled { opacity: .35; }
 .cue-expand { display: grid; place-items: center; border: 0; background: transparent; color: var(--soft); border-radius: 4px; padding: 0; width: 19px; height: 26px; flex: 0 0 auto; }
 .cue-expand:hover { color: var(--ink); background: var(--hover); }
 .cue-select { display: flex; align-items: center; text-align: left; gap: 9px; flex: 1; min-width: 0; min-height: 29px; padding: 0; background: none; border: 0; border-radius: 6px; }
-.cue-select--draggable { cursor: grab; -webkit-user-select: none; user-select: none; }
-.cue-select--draggable:active,
+.cue-draggable { cursor: grab; -webkit-user-select: none; user-select: none; }
+.cue-draggable:active,
 .studio-shell.studio-shell--dragging * { cursor: grabbing; }
 .cue-drag-preview {
   position: fixed; z-index: 8; top: 0; left: 0; display: flex; align-items: center; gap: 8px;

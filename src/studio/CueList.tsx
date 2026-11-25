@@ -1,11 +1,11 @@
-import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import {
   ArrowDown, ArrowUp, BookOpen, ChevronDown, ChevronRight, Clapperboard,
   Ellipsis, Folder, ListMusic, Music2, Pencil, Plus, Trash2, Type,
 } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { flatten, kindNames, textSlideCues, type Cue, type Group, type Item, type ItemKind } from '../shared/model'
-import type { CueDragItem } from './useCueDrag'
+import type { CueDragStart } from './useCueDrag'
 
 export const itemIcons = {
   text: Type,
@@ -113,7 +113,7 @@ interface CueListProps {
   onToggle: (id: string) => void
   onCue: (id: string | undefined, branchId?: string) => void
   onGoLive: (id: string) => void
-  onCuePointerDown: (event: ReactPointerEvent<HTMLButtonElement>, item: CueDragItem) => void
+  onCuePointerDown: CueDragStart
   onEdit: (item: Item, parentId: string) => void
   onAdd: (groupId: string) => void
   onMove: (parentId: string, index: number, direction: -1 | 1) => void
@@ -143,7 +143,7 @@ function CueRow({ item, depth, subtitle, cues, props, children }: {
         </button>
       ) : <span className="cue-rail" />}
       <button
-        className={cueId ? 'cue-select cue-select--draggable' : 'cue-select'}
+        className={cueId ? 'cue-select cue-draggable' : 'cue-select'}
         aria-current={current ? true : undefined}
         title={t(cueId ? 'Cue {name} (double-click to go live)' : 'Cue {name}', { name: item.title })}
         onPointerDown={cueId ? event => props.onCuePointerDown(event, { cueId, title: item.title, kind: item.kind }) : undefined}

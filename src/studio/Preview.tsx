@@ -18,6 +18,7 @@ interface PreviewProps {
   kiosk: boolean
   busy: boolean
   dropTarget: CueDropTarget | null
+  browserDrag: boolean
   onBlackout: () => void
   onNavigateVerse: (verse: PassageVerse) => void
   textNavigation?: { index: number; total: number; onMove: (direction: -1 | 1) => void }
@@ -204,7 +205,7 @@ export function Preview(props: PreviewProps) {
           <h2 id="next-heading"><ChevronRight size={17} /> {t('Next up')}</h2>
           {props.next && <span className="status-pill status-pill--next">{t(props.browsing ? 'Preview' : 'Queued')}</span>}
         </header>
-        <CueDropScreen target="next" active={props.dropTarget === 'next'} prompt={t('Drop to queue')}>
+        <CueDropScreen target="next" active={props.dropTarget === 'next'} prompt={t(props.browserDrag ? 'Drop to preview' : 'Drop to queue')}>
           <Audience key={props.next?.id ?? 'empty'} cue={props.next} />
           {props.nextError && <div className="slide-empty slide-overlay" role="status">{translateError(t, props.nextError)}</div>}
         </CueDropScreen>
