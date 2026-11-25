@@ -92,7 +92,6 @@ export interface TextEntry {
 
 export type TextSlide = ItemBase & {
   kind: 'text'
-  theme: Theme
   entries: TextEntry[]
   showCaption?: false
   captionFromFirstEntry?: true
@@ -102,7 +101,7 @@ export interface LibraryTextSlide {
   slide: TextSlide
 }
 
-export type TextCue = ItemBase & { kind: 'text'; text: string; theme: Theme; caption?: string }
+export type TextCue = ItemBase & { kind: 'text'; text: string; caption?: string }
 export type ScriptureCue = ItemBase & { kind: 'scripture'; reference: Reference; theme: Theme }
 type MediaCue = ItemBase & { kind: 'video' | 'audio'; path: string }
 
@@ -134,9 +133,10 @@ export interface Display {
   studio: boolean
 }
 
+export type AudienceTextCue = TextCue & { theme: Theme }
 export type AudienceScriptureCue = ScriptureCue & { text: string; caption: string }
 
-export type AudienceCue = TextCue | AudienceScriptureCue | (ItemBase & { kind: 'video' | 'audio'; url: string })
+export type AudienceCue = AudienceTextCue | AudienceScriptureCue | (ItemBase & { kind: 'video' | 'audio'; url: string })
 
 export type PlaybackAction =
   | { kind: 'play' | 'pause' | 'stop' }
@@ -181,8 +181,8 @@ export const kindNames = {
   playlist: 'Nested playlist',
 } as const satisfies Record<ItemKind, string>
 
-type LegacyTextSlide = Omit<TextCue, 'caption'>
-type SavedTextSlide = TextSlide & { caption?: string }
+type LegacyTextSlide = Omit<TextCue, 'caption'> & { theme?: Theme }
+type SavedTextSlide = TextSlide & { caption?: string; theme?: Theme }
 type SavedGroup = Omit<Group, 'children'> & {
   children: (Exclude<Item, Group | TextSlide> | SavedTextSlide | LegacyTextSlide | SavedGroup)[]
 }
@@ -192,11 +192,11 @@ export type SavedProject = Omit<Project, 'playlists' | 'textLibrary' | 'slideLib
   textLibrary?: (Omit<LibraryTextSlide, 'slide'> & { slide: SavedTextSlide; name?: string })[]
 }
 
-function migrateTextSlide({ id, title, text, theme }: LegacyTextSlide): TextSlide {
-  return { id, title, kind: 'text', theme, entries: [{ id: `${id}:entry`, text }], showCaption: false }
+function migrateTextSlide({ id, title, text }: LegacyTextSlide): TextSlide {
+  return { id, title, kind: 'text', entries: [{ id: `${id}:entry`, text }], showCaption: false }
 }
 
-function normalizeTextSlide({ caption, ...slide }: SavedTextSlide): TextSlide {
+function normalizeTextSlide({ caption, theme: _theme, ...slide }: SavedTextSlide): TextSlide {
   if (caption === undefined) return slide
   const title = slide.captionFromFirstEntry ? textCueTitle(slide.entries[0]?.text ?? '') : caption
   return { ...slide, title: title || slide.title }
@@ -250,7 +250,6 @@ export function textSlideCues(slide: TextSlide): TextCue[] {
     title: textCueTitle(entry.text),
     text: entry === firstEntry ? '' : entry.text,
     caption,
-    theme: slide.theme,
   }))
 }
 
@@ -313,10 +312,9 @@ const welcome = migrateTextSlide({
   title: 'Welcome',
   kind: 'text',
   text: 'Welcome\nWe’re glad you’re here',
-  theme: 'twilight',
 })
 
-export const welcomePreview: AudienceCue = textSlideCues(welcome)[0]
+export const welcomePreview = textSlideCues(welcome)[0]
 
 export const starterProject: Project = {
   version: 1,
@@ -344,11 +342,11 @@ export const starterProject: Project = {
           kind: 'playlist',
           title: 'Worship',
           children: [
-            migrateTextSlide({ id: 'call', title: 'Call to Worship', kind: 'text', text: 'Let us worship together', theme: 'twilight' }),
-            migrateTextSlide({ id: 'prayer', title: 'Prayer', kind: 'text', text: 'Let us pray', theme: 'plain' }),
+            migrateTextSlide({ id: 'call', title: 'Call to Worship', kind: 'text', text: 'Let us worship together' }),
+            migrateTextSlide({ id: 'prayer', title: 'Prayer', kind: 'text', text: 'Let us pray' }),
           ],
         },
-        migrateTextSlide({ id: 'announcements', title: 'Announcements', kind: 'text', text: 'Announcements', theme: 'violet' }),
+        migrateTextSlide({ id: 'announcements', title: 'Announcements', kind: 'text', text: 'Announcements' }),
         {
           id: 'closing',
           kind: 'playlist',

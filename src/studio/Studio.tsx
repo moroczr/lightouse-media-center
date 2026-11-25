@@ -7,21 +7,22 @@ import { useLanguage } from '../shared/i18n'
 import { translateError, type Message } from '../shared/messages'
 import { useStage } from '../shared/Audience'
 import { useKioskBackground } from '../shared/KioskBackground'
+import { useSlideThemes } from '../shared/SlideThemes'
 import {
   closeKiosk, desktop, displays, isKioskOpen, listenKioskClosed, loadProject, openKiosk, pickFolder,
-  controlPlayback, present, resolveCue, saveProject, setBlackout,
+  controlPlayback, present, resolveCue, saveProject, setBlackout, slideSettings,
 } from '../shared/bridge'
 import {
-  copyLibraryTextSlide, findCueAncestors, flatten, mediaCue, normalizeTextSlideFolder, starterProject, textSlideCues, updateGroup,
-  type AudienceCue, type Cue, type Display, type Group, type Item,
-  type LibraryTextSlide, type Project, type ScriptureCue, type TextCue, type TextSlide, welcomePreview,
+  builtInSlideDefaults, copyLibraryTextSlide, findCueAncestors, flatten, mediaCue, normalizeTextSlideFolder, starterProject, textSlideCues, updateGroup,
+  type AudienceCue, type AudienceScriptureCue, type Cue, type Display, type Group, type Item, type MediaFile,
+  type LibraryTextSlide, type Project, type ScriptureCue, type TextCue, type TextSlide, type Theme, welcomePreview,
 } from '../shared/model'
 import { formatScriptureCue, verseLabel, type PassageVerse } from '../shared/scripture'
 import { CueList, ItemIcon } from './CueList'
 import { CuePickerDialog, type CuePickerTab } from './CuePickerDialog'
 import { Dialog, NameEditor, TextEditor } from './Editors'
 import { KioskBackgroundEditor } from './KioskBackgroundEditor'
-import { ScriptureEditor } from './ScriptureEditor'
+import { ScriptureEditor, type ScriptureView } from './ScriptureEditor'
 import { MediaBrowser, type MediaFilter, type MediaView } from './MediaBrowser'
 import { TextSlideLibrary, type TextLibraryView } from './TextSlideLibrary'
 import { Preview } from './Preview'
@@ -79,6 +80,23 @@ function isInSlideLibrary(path: string, library: string) {
   return path === library || path.startsWith(`${library}/`)
 }
 
+function useResolvedCue(item: Exclude<Cue, TextCue> | undefined) {
+  const [resolved, setResolved] = useState<{ item: Exclude<Cue, TextCue>; cue: AudienceCue | null; error: string }>()
+
+  useEffect(() => {
+    if (!item) return
+    let current = true
+    void resolveCue(item).then(cue => {
+      if (current) setResolved({ item, cue, error: '' })
+    }).catch(reason => {
+      if (current) setResolved({ item, cue: null, error: errorText(reason) })
+    })
+    return () => { current = false }
+  }, [item])
+
+  return resolved?.item === item ? resolved : undefined
+}
+
 export default function Studio() {
   const { t } = useLanguage()
   const [project, setProject] = useState<Project>(starterProject)
@@ -93,9 +111,15 @@ export default function Studio() {
   const [expanded, setExpanded] = useState(() => new Set(['worship']))
   const stage = useStage()
   const [liveTextCues, setLiveTextCues] = useState<TextCue[]>([])
+  const { settings: themeSettings, error: themeError, reload: reloadThemes } = useSlideThemes()
+  const [savingTextTheme, setSavingTextTheme] = useState(false)
+  const textTheme = themeSettings?.defaultThemes.text ?? builtInSlideDefaults.text
   const { background, error: backgroundError } = useKioskBackground()
   const [editor, setEditor] = useState<Editor | null>(null)
   const [tab, setTab] = useState<WorkspaceTab>('cues')
+  const [mediaSelection, setMediaSelection] = useState<MediaFile>()
+  const [versePreview, setVersePreview] = useState<AudienceScriptureCue>()
+  const [slideSelection, setSlideSelection] = useState<LibraryTextSlide>()
   const [destinations, setDestinations] = useState<Partial<Record<ToolTab, string>>>({})
   const [scriptureEdit, setScriptureEdit] = useState<ScriptureCue>()
   const [bibleSettingsRevision, setBibleSettingsRevision] = useState(0)
@@ -103,6 +127,7 @@ export default function Studio() {
   const [libraryLocation, setLibraryLocation] = useState<{ revision: number; folder?: string; selectedId?: string }>({ revision: 0 })
   const [mediaFilter, setMediaFilter] = useState<MediaFilter>('all')
   const workspaceTabList = useRef<HTMLDivElement>(null)
+  const [scriptureView, setScriptureView] = useState<ScriptureView>('list')
   const [mediaView, setMediaView] = useState<MediaView>('list')
   const [textLibraryView, setTextLibraryView] = useState<TextLibraryView>('list')
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -120,14 +145,23 @@ export default function Studio() {
   const sequence = useMemo(() => flatten(active.children), [active])
   const index = sequence.findIndex(item => item.id === cueId)
   const queued = sequence[index]
-  const [resolved, setResolved] = useState<{ item: Cue; cue: AudienceCue | null; error: string }>()
-  const next = resolved?.item === queued ? resolved?.cue ?? null : null
+  const mediaPreview = useMemo(() => mediaSelection && mediaCue(mediaSelection), [mediaSelection])
+  const slidePreview = useMemo(() => slideSelection && textSlideCues(slideSelection.slide)[0], [slideSelection])
+  const browserPreview = tab === 'media' ? mediaPreview
+    : tab === 'scripture' && !scriptureEdit ? versePreview
+    : tab === 'text' && textPanel.kind === 'library' ? slidePreview : undefined
+  const resolvedQueue = useResolvedCue(queued?.kind === 'text' ? undefined : queued)
+  const resolvedMedia = useResolvedCue(tab === 'media' ? mediaPreview : undefined)
+  const resolved = browserPreview ? resolvedMedia : resolvedQueue
+  const upcoming = browserPreview ?? queued
+  const next = upcoming?.kind === 'text' ? { ...upcoming, theme: textTheme }
+    : browserPreview?.kind === 'scripture' ? browserPreview : resolved?.cue ?? null
   const savedDisplay = displayList.find(display => display.id === project.displayId)
   const display = savedDisplay ?? displayList.find(item => !item.studio) ?? displayList[0]
   const firstCue = sequence[0]
   const standby = !kiosk && stage.revision === 0 && !stage.cue && !desktop
     && active.id === 'sunday' && queued?.id !== welcomePreview.id
-    && firstCue?.kind === 'text' && firstCue.id === welcomePreview.id ? firstCue : null
+    && firstCue?.kind === 'text' && firstCue.id === welcomePreview.id ? { ...firstCue, theme: textTheme } : null
 
   const scriptureTarget = toolDestination('scripture')
   const textTarget = toolDestination('text')
@@ -226,15 +260,12 @@ export default function Studio() {
   }, [active, currentCueId, kiosk, stage.revision])
 
   useEffect(() => {
-    if (!queued) return
-    let current = true
-    void resolveCue(queued).then(cue => {
-      if (current) setResolved({ item: queued, cue, error: '' })
-    }).catch(reason => {
-      if (current) setResolved({ item: queued, cue: null, error: errorText(reason) })
+    const cue = stage.cue
+    if ((!themeSettings && !themeError) || cue?.kind !== 'text' || cue.theme === textTheme) return
+    void present({ ...cue, theme: textTheme }, stage.revision).catch(reason => {
+      setNotice({ text: errorText(reason), error: true })
     })
-    return () => { current = false }
-  }, [queued])
+  }, [stage.cue, stage.revision, textTheme, themeSettings, themeError])
 
   useEffect(() => {
     let active = true
@@ -302,7 +333,10 @@ export default function Studio() {
 
   function nudge(direction: -1 | 1) {
     const candidate = sequence[(index < 0 ? sequence.length : index) + direction]
-    if (candidate) setCueId(candidate.id)
+    if (candidate) {
+      setCueId(candidate.id)
+      if (browserPreview) activateTab('cues')
+    }
   }
 
   async function send(item: Cue, mode: 'advance' | 'keep-queue', textCues: TextCue[] = []) {
@@ -310,7 +344,7 @@ export default function Studio() {
     transmittingRef.current = true
     setTransmitting(true)
     try {
-      const cue = await resolveCue(item)
+      const cue = await resolveCue(item.kind === 'text' ? { ...item, theme: textTheme } : item)
       await present(cue)
       setLiveTextCues(textCues)
       if (mode === 'advance') {
@@ -326,6 +360,19 @@ export default function Studio() {
     }
   }
 
+  async function changeTextTheme(theme: Theme) {
+    if (theme === textTheme || savingTextTheme) return
+    setSavingTextTheme(true)
+    try {
+      await slideSettings.saveDefault('text', theme)
+      await reloadThemes()
+    } catch (reason) {
+      tell(errorText(reason), true)
+    } finally {
+      setSavingTextTheme(false)
+    }
+  }
+
   function sendTextSlide(slide: TextSlide) {
     const cues = textSlideCues(slide)
     if (cues.length) void send(cues[0], 'keep-queue', cues)
@@ -334,11 +381,16 @@ export default function Studio() {
   function showAdjacentTextSlide(direction: -1 | 1) {
     if (liveTextIndex < 0 || transmittingRef.current) return
     const cue = liveTextCues[liveTextIndex + direction]
-    if (cue) void updateStage(present(cue, stage.revision))
+    if (cue) void updateStage(present({ ...cue, theme: textTheme }, stage.revision))
   }
 
   function goLive() {
-    if (queued && next) void send(queued, 'advance')
+    if (!upcoming || !next) return
+    if (browserPreview?.kind === 'text' && slideSelection) {
+      sendTextSlide(copyLibraryTextSlide(slideSelection))
+      return
+    }
+    void send(upcoming, browserPreview ? 'keep-queue' : 'advance')
   }
 
   function takeCue(id: string) {
@@ -464,10 +516,9 @@ export default function Studio() {
     updatePlaylist(root => updateGroup(root, parent, group => ({
       ...group, children: group.children.map(child => child.id === item.id ? item : child),
     })))
-    const previousTextCues = existing.kind === 'text' ? textSlideCues(existing) : []
-    if (item.kind === 'text') {
+    if (item.kind === 'text' && existing.kind === 'text') {
       setExpanded(current => new Set(current).add(item.id))
-      const oldIndex = previousTextCues.findIndex(cue => cue.id === cueId)
+      const oldIndex = textSlideCues(existing).findIndex(cue => cue.id === cueId)
       const cues = textSlideCues(item)
       if (oldIndex >= 0 && !cues.some(cue => cue.id === cueId)) {
         setCueId(cues[Math.min(oldIndex, cues.length - 1)]?.id ?? null)
@@ -475,8 +526,8 @@ export default function Studio() {
     }
 
     const shown = stage.cue
-    if (item.theme !== existing.theme && shown?.kind === item.kind
-      && (shown.id === item.id || previousTextCues.some(cue => cue.id === shown.id))) {
+    if (item.kind === 'scripture' && existing.kind === 'scripture' && shown?.kind === 'scripture'
+      && shown.id === item.id && item.theme !== existing.theme) {
       void updateStage(present({ ...shown, theme: item.theme }, stage.revision))
     }
     finishCueEdit(item.kind)
@@ -724,8 +775,8 @@ export default function Studio() {
         <main className="main">
           <div className="main-inner">
             <Preview
-              stage={stage} standby={standby} background={background?.url} next={next} nextTitle={queued?.title}
-              nextError={resolved?.item === queued ? resolved?.error ?? '' : ''}
+              stage={stage} standby={standby} background={background?.url} next={next}
+              nextError={resolved?.error ?? ''} browsing={!!browserPreview}
               kiosk={kiosk} busy={transmitting}
               dropTarget={drag.preview?.target ?? null} onBlackout={toggleBlackout}
               onNavigateVerse={showAdjacentVerse}
@@ -757,8 +808,8 @@ export default function Studio() {
                       disabled={index < 0 || index >= sequence.length - 1} onClick={() => nudge(1)}
                       title={t('Cue next item (↓)')}><span>{t('Next')}</span><ChevronRight size={17} aria-hidden="true" /></button>
                     <button type="button" className="button button-primary" aria-label={t('Go live')}
-                      disabled={!queued || !next || transmitting} onClick={goLive}
-                      title={t('Send the queued item to Kiosk (Enter)')}><RadioTower size={17} aria-hidden="true" /><span>{t('Go live')}</span></button>
+                      disabled={!upcoming || !next || transmitting} onClick={goLive}
+                      title={t(browserPreview ? 'Send the previewed item to Kiosk' : 'Send the queued item to Kiosk (Enter)')}><RadioTower size={17} aria-hidden="true" /><span>{t('Go live')}</span></button>
                   </div>
                 </div>
               </div>
@@ -793,10 +844,10 @@ export default function Studio() {
                 tabIndex={0} hidden={tab !== 'media'}>
                 <MediaBrowser sources={project.sources} filter={mediaFilter} onFilterChange={setMediaFilter}
                   view={mediaView} onViewChange={setMediaView} onAddFolder={addSource} busy={transmitting}
-                  onLive={file => void send(mediaCue(file), 'keep-queue')} />
+                  onPreview={setMediaSelection} onLive={file => void send(mediaCue(file), 'keep-queue')} />
               </section>
 
-              <section id="workspace-panel-scripture" role="tabpanel" aria-labelledby="workspace-tab-scripture" className="tool-panel"
+              <section id="workspace-panel-scripture" role="tabpanel" aria-labelledby="workspace-tab-scripture" className="tool-panel scripture-panel"
                 tabIndex={0} hidden={tab !== 'scripture'}>
                 {scriptureEdit && (
                   <>
@@ -806,30 +857,36 @@ export default function Studio() {
                     </div>
                     <ScriptureEditor key={scriptureEdit.id} existing={scriptureEdit}
                       active={tab === 'scripture'} settingsRevision={bibleSettingsRevision} busy={transmitting}
+                      view={scriptureView} onViewChange={setScriptureView}
                       onSave={cue => saveItem(scriptureTarget.id, cue, scriptureEdit)} />
                   </>
                 )}
-                <div hidden={!!scriptureEdit}>
+                <div className="scripture-lookup" hidden={!!scriptureEdit}>
                   <ScriptureEditor active={tab === 'scripture' && !scriptureEdit} settingsRevision={bibleSettingsRevision} busy={transmitting}
-                    onLive={cue => void send(cue, 'keep-queue')} />
+                    view={scriptureView} onViewChange={setScriptureView}
+                    onPreview={setVersePreview} onLive={cue => void send(cue, 'keep-queue')} />
                 </div>
               </section>
 
               <section id="workspace-panel-text" role="tabpanel" aria-labelledby="workspace-tab-text" className="tool-panel"
                 tabIndex={0} hidden={tab !== 'text'}>
                 <div hidden={textPanel.kind !== 'library'}>
-                  <TextSlideLibrary items={project.textLibrary} libraries={project.slideLibraries}
+                  <TextSlideLibrary active={tab === 'text' && textPanel.kind === 'library'}
+                    items={project.textLibrary} libraries={project.slideLibraries}
                     key={libraryLocation.revision} selectedId={libraryLocation.selectedId} initialFolder={libraryLocation.folder}
-                    view={textLibraryView} onViewChange={setTextLibraryView} busy={transmitting}
+                    theme={textTheme} view={textLibraryView} onViewChange={setTextLibraryView} busy={transmitting}
                     saving={savingLibrary} error={saveError}
                     actions={{
                       kind: 'browse',
+                      backgroundBusy: savingTextTheme || (!themeSettings && !themeError),
+                      onBackgroundChange: theme => void changeTextTheme(theme),
                       onCreateLibrary: () => setTextPanel({ kind: 'new-library' }),
                       onCreate: folder => setTextPanel({ kind: 'saved-slide', folder }),
                       onRenameLibrary: folder => setTextPanel({ kind: 'rename-library', folder }),
                       onDeleteLibrary: folder => setEditor({ kind: 'delete-library', folder }),
                       onEdit: item => setTextPanel({ kind: 'saved-slide', folder: item.folder, existing: item.slide }),
                       onDelete: item => setEditor({ kind: 'delete-saved-slide', item }),
+                      onPreview: setSlideSelection,
                       onLive: item => sendTextSlide(copyLibraryTextSlide(item)),
                     }} />
                 </div>
@@ -890,7 +947,7 @@ export default function Studio() {
       {editor?.kind === 'pick-cue' && (
         <CuePickerDialog tab={editor.tab} onTabChange={tab => setEditor({ ...editor, tab })}
           destination={playlistPath(active, editor.parent)?.at(-1)?.title} project={project}
-          settingsRevision={bibleSettingsRevision} busy={transmitting}
+          settingsRevision={bibleSettingsRevision} busy={transmitting} textTheme={textTheme}
           onAdd={item => addPickedCue(editor.parent, item)}
           onCreateText={() => setEditor({ kind: 'one-off', parent: editor.parent })}
           onCreatePlaylist={() => setEditor({ kind: 'playlist', parent: editor.parent })} onClose={() => setEditor(null)} />

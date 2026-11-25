@@ -6,7 +6,6 @@ import { Audience } from '../shared/Audience'
 import { adjacentVerses } from '../shared/bridge'
 import { clockTime, isMedia, type AudienceCue, type PlaybackAction, type Reference, type Stage } from '../shared/model'
 import type { PassageVerse } from '../shared/scripture'
-import { ItemIcon } from './CueList'
 import type { CueDropTarget } from './useCueDrag'
 
 interface PreviewProps {
@@ -14,8 +13,8 @@ interface PreviewProps {
   standby: AudienceCue | null
   background?: string
   next: AudienceCue | null
-  nextTitle?: string
   nextError: string
+  browsing: boolean
   kiosk: boolean
   busy: boolean
   dropTarget: CueDropTarget | null
@@ -186,8 +185,6 @@ export function Preview(props: PreviewProps) {
   const audience = stage.cue ?? (props.background ? null : props.standby)
   const { textNavigation } = props
   const status = stage.blackout ? 'Blackout' : live ? 'Live' : stage.cue ? 'Staged' : 'Standby'
-  const liveTitle = !stage.blackout && audience ? audience.title
-    : props.background ? t('Kiosk background') : t(stage.blackout ? 'Display is black' : 'No live cue')
 
   return (
     <div className="preview-grid">
@@ -201,24 +198,16 @@ export function Preview(props: PreviewProps) {
           <button type="button" className="button preview-blackout" aria-label={t('Blackout')} aria-pressed={stage.blackout}
             onClick={props.onBlackout} aria-keyshortcuts="Control+Shift+B" title={t('Toggle blackout (Ctrl+Shift+B)')}><Ban size={16} aria-hidden="true" /><span>{t('Blackout')}</span></button>
         </CueDropScreen>
-        <div className="preview-caption">
-          <span>{liveTitle}</span>
-          {audience && !media && !stage.blackout && <span className="subtle">{stage.cue ? t('Audience view') : t('Standby preview')}</span>}
-        </div>
       </section>
       <section className="preview-panel preview-panel--next" aria-labelledby="next-heading">
         <header className="preview-heading">
           <h2 id="next-heading"><ChevronRight size={17} /> {t('Next up')}</h2>
-          {props.next && <span className="status-pill status-pill--next">{t('Queued')}</span>}
+          {props.next && <span className="status-pill status-pill--next">{t(props.browsing ? 'Preview' : 'Queued')}</span>}
         </header>
         <CueDropScreen target="next" active={props.dropTarget === 'next'} prompt={t('Drop to queue')}>
           <Audience key={props.next?.id ?? 'empty'} cue={props.next} />
           {props.nextError && <div className="slide-empty slide-overlay" role="status">{translateError(t, props.nextError)}</div>}
         </CueDropScreen>
-        <div className="preview-caption">
-          <span>{props.nextTitle ?? t('No cue selected')}</span>
-          {props.next && <ItemIcon kind={props.next.kind} size={13} />}
-        </div>
       </section>
       <KioskVolume stage={stage} onAction={props.onPlayback} />
       <div className="live-transport">

@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
-import { BookOpen, ChevronDown, ChevronUp, Search } from 'lucide-react'
+import { BookOpen, ChevronDown, ChevronRight, ChevronUp, Folder, LayoutGrid, List, Search, X } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError } from '../shared/messages'
 import { bible } from '../shared/bridge'
-import { builtInSlideDefaults, type BibleSettings, type Book, type ScriptureCue, type Theme, type Verse } from '../shared/model'
+import { builtInSlideDefaults, type AudienceScriptureCue, type BibleSettings, type Book, type ScriptureCue, type Theme, type Verse } from '../shared/model'
 import {
-  deleteReferenceSegment, lookupReference, normalizeBook, readVerseWindow, referenceSuggestions, verseLabel, verseWindowSize,
+  deleteReferenceSegment, formatScriptureCue, lookupReference, normalizeBook, readVerseWindow, referenceSuggestions, verseLabel, verseWindowSize,
   type PassageVerse, type ReferenceSuggestion,
 } from '../shared/scripture'
 import { useSlideThemes } from '../shared/SlideThemes'
 import { canSearchVerseText } from '../shared/verseSearch'
-import { EditorActions, EditorForm, SendToKioskButton, ThemePicker } from './Editors'
+import { EditorActions, EditorForm, SendToKioskButton } from './Editors'
+import { BackgroundPicker } from './BackgroundPicker'
 
 const segmentLabels = { book: 'Bible books', chapter: 'Chapters', verse: 'Verses' } as const
 
@@ -20,21 +21,39 @@ type Draft = {
   complete?: boolean
   location?: { book: string; suffix: string }
 }
+export type ScriptureView = 'list' | 'mosaic'
+
+type BibleLocation = { bookId: string; chapter?: number }
 type Navigation = { search: PassageVerse; start: PassageVerse; selected: PassageVerse; visible: PassageVerse[] }
 type VerseWindow = Awaited<ReturnType<typeof readVerseWindow>>
 type LoadResult<T> = { key: string; values: T[] } | { key: string; error: string }
 
-export function ScriptureEditor({ existing, active, settingsRevision, busy, onSave, onLive, pickOnly = false }: {
+function resultOffset(event: KeyboardEvent<HTMLUListElement>, mosaic: boolean) {
+  if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return 0
+  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    const columns = mosaic ? getComputedStyle(event.currentTarget).gridTemplateColumns.split(/\s+/).length : 1
+    return event.key === 'ArrowUp' ? -columns : columns
+  }
+  if (mosaic && event.key === 'ArrowLeft') return -1
+  if (mosaic && event.key === 'ArrowRight') return 1
+  return 0
+}
+
+export function ScriptureEditor({ existing, active, settingsRevision, busy, view, onViewChange, onSave, onPreview, onLive, pickOnly = false }: {
   existing?: ScriptureCue;
   active: boolean;
   settingsRevision: number;
   busy: boolean;
+  view: ScriptureView;
+  onViewChange: (view: ScriptureView) => void;
   onSave?: (cue: ScriptureCue) => void;
+  onPreview?: (cue: AudienceScriptureCue | undefined) => void;
   onLive?: (cue: ScriptureCue) => void;
   pickOnly?: boolean;
 }) {
   const { t } = useLanguage()
   const { settings: slideSettings, error: themeError } = useSlideThemes()
+  const mosaic = view === 'mosaic'
   const initial = existing?.reference
   const [requestedTranslation, setTranslation] = useState(initial?.translation)
   const [settings, setSettings] = useState<BibleSettings>()
@@ -42,11 +61,13 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
   const [chosenTheme, setTheme] = useState<Theme>()
   const theme = chosenTheme ?? existing?.theme ?? slideSettings?.defaultThemes.scripture ?? builtInSlideDefaults.scripture
   const themeReady = !!(chosenTheme || existing || slideSettings || themeError)
+  const [location, setLocation] = useState<BibleLocation>()
+  const [folderIndex, setFolderIndex] = useState(0)
   const [draft, setDraft] = useState<Draft>()
   const [byText, setByText] = useState(false)
   const [query, setQuery] = useState('')
   const [textResult, setTextResult] = useState<LoadResult<PassageVerse>>()
-  const [textMatch, setTextMatch] = useState<{ key: string; verse: PassageVerse }>()
+  const [directMatch, setDirectMatch] = useState<{ key: string; verse: PassageVerse }>()
   const [focused, setFocused] = useState(false)
   const [dismissed, setDismissed] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
@@ -60,6 +81,8 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
   const inputRef = useRef<HTMLInputElement>(null)
   const moveCaret = useRef(false)
   const remainingLetters = useRef<string[]>([])
+  const breadcrumb = useRef<HTMLElement>(null)
+  const focusCrumb = useRef(false)
   const verseResults = useRef<HTMLUListElement>(null)
   const selectedRow = useRef<HTMLButtonElement>(null)
   const focusSelectedRow = useRef(false)
@@ -73,22 +96,30 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
   const books = bookList?.key === translation ? bookList : undefined
   const bookValues = books && 'values' in books ? books.values : undefined
   const original = bookValues?.find(book => book.id === initial?.book)
-  const location = draft?.location
-  const translatedBook = location && bookValues?.find(book => book.id === location.book)
-  const text = translatedBook && location ? `${translatedBook.name} ${location.suffix}`
+  const draftLocation = draft?.location
+  const translatedBook = draftLocation && bookValues?.find(book => book.id === draftLocation.book)
+  const text = translatedBook && draftLocation ? `${translatedBook.name} ${draftLocation.suffix}`
     : draft?.text ?? (initial ? `${original?.name ?? initial.book} ${initial.chapter}:${initial.verse}` : '')
+  const phrase = query.trim()
+  const filtering = !!(byText ? phrase : text.trim())
+  const searchingText = filtering && byText
+  const byReference = filtering && !byText
+  const openBook = !filtering ? bookValues?.find(book => book.id === location?.bookId) : undefined
+  const openChapter = openBook && location?.chapter && location.chapter <= openBook.chapters ? location.chapter : undefined
+  const openChapterLabel = openChapter === undefined ? '' : t('Chapter {number}', { number: openChapter })
   const referenceExample = bookValues?.find(book => book.id === '1PE')?.name ?? '1 Peter'
   const reference = useMemo(
     () => lookupReference(text, bookValues ?? []),
     [text, bookValues],
   )
   const { book, bookText, chapter, chapterText, verseText, segment } = reference
-  const bookId = book?.id
-  const chapterKey = bookId && chapter !== undefined && segment === 'verse' ? `${translation}/${bookId}/${chapter}` : ''
+  const chapterBookId = openChapter !== undefined ? openBook?.id : byReference && segment === 'verse' ? book?.id : undefined
+  const chapterNumber = openChapter ?? chapter
+  const chapterKey = chapterBookId && chapterNumber !== undefined ? `${translation}/${chapterBookId}/${chapterNumber}` : ''
   const verses = verseList?.key === chapterKey ? verseList : undefined
-  const foundVerse = verseText && verses && 'values' in verses
-    ? verses.values.find(row => row.verse === Number(verseText)) : undefined
-  const options = useMemo(() => referenceSuggestions(reference, verses && 'values' in verses ? verses.values : []), [reference, verses])
+  const chapterRows = verses && 'values' in verses ? verses.values : undefined
+  const foundVerse = byReference && verseText ? chapterRows?.find(row => row.verse === Number(verseText)) : undefined
+  const options = useMemo(() => referenceSuggestions(reference, chapterRows ?? []), [reference, chapterRows])
   const finished = draft?.complete ?? !!initial
   const suggestionsOpen = !byText && focused && !dismissed && !finished && options.length > 0
   const activeSuggestion = suggestionsOpen ? options[activeIndex] : undefined
@@ -97,20 +128,36 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
   const browse = navigation?.search === search ? navigation : undefined
   const start = browse?.start ?? search
   const currentWindow = verseWindow?.start === start ? verseWindow?.value : undefined
-  const phrase = query.trim()
   const textKey = translation && byText && canSearchVerseText(phrase) ? `${translation}/${phrase}` : ''
   const result = textResult?.key === textKey ? textResult : undefined
-  const hits = result && 'values' in result ? result.values : []
-  const activeMatch = textMatch?.key === textKey && hits.includes(textMatch.verse) ? textMatch.verse : hits[0]
-  const selected = byText ? activeMatch : browse?.selected ?? search
-  const visible = byText ? hits : currentWindow?.visible ?? browse?.visible ?? (start ? [start] : [])
+  const folderVerses = useMemo(() => openBook && openChapter !== undefined
+    ? chapterRows?.map(row => ({ ...row, book: openBook, chapter: openChapter })) : undefined, [openBook, openChapter, chapterRows])
+  const directKey = textKey ? `text:${textKey}` : openChapter !== undefined ? `chapter:${chapterKey}` : ''
+  const directVerses = folderVerses ?? (result && 'values' in result ? result.values : [])
+  const activeMatch = directMatch?.key === directKey && directVerses.includes(directMatch.verse) ? directMatch.verse : directVerses[0]
+  const selected = byReference ? browse?.selected ?? search : activeMatch
+  const visible = byReference ? currentWindow?.visible ?? browse?.visible ?? (start ? [start] : []) : directVerses
+  const folders = filtering || openChapter !== undefined ? [] : openBook
+    ? Array.from({ length: openBook.chapters }, (_, index) => ({
+      label: t('Chapter {number}', { number: index + 1 }), location: { bookId: openBook.id, chapter: index + 1 },
+    }))
+    : (bookValues ?? []).map(book => ({ label: book.name, location: { bookId: book.id, chapter: undefined } }))
   const title = selected ? verseLabel(selected) : ''
   const selectedIndex = visible.findIndex(verse => verseLabel(verse) === title)
-  const previousVerse = visible[selectedIndex - 1] ?? (byText ? undefined : currentWindow?.previous)
-  const nextVerse = visible[selectedIndex + 1] ?? (byText ? undefined : currentWindow?.following)
-  const canNavigate = byText || !!currentWindow
+  const previousVerse = visible[selectedIndex - 1] ?? currentWindow?.previous
+  const nextVerse = visible[selectedIndex + 1] ?? currentWindow?.following
+  const canNavigate = !byReference || !!currentWindow
   const error = translationError || (books && 'error' in books ? books.error : '')
     || (verses && 'error' in verses ? verses.error : '')
+
+  const cueForVerse = useCallback((verse: PassageVerse): ScriptureCue => ({
+    id: existing?.id ?? crypto.randomUUID(), title: verseLabel(verse), kind: 'scripture', theme,
+    reference: { translation, book: verse.book.id, chapter: verse.chapter, verse: verse.verse },
+  }), [existing?.id, theme, translation])
+
+  useEffect(() => {
+    onPreview?.(selected && themeReady ? formatScriptureCue(cueForVerse(selected), selected.text) : undefined)
+  }, [onPreview, selected, themeReady, cueForVerse])
 
   useEffect(() => {
     if (!active) return
@@ -160,13 +207,13 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
   }, [translation])
 
   useEffect(() => {
-    if (!chapterKey || !bookId || chapter === undefined) return
+    if (!chapterKey || !chapterBookId || chapterNumber === undefined) return
     let active = true
-    void readChapter(bookId, chapter).then(values => {
+    void readChapter(chapterBookId, chapterNumber).then(values => {
       if (active) setVerseList({ key: chapterKey, values })
     }).catch(reason => { if (active) setVerseList({ key: chapterKey, error: String(reason) }) })
     return () => { active = false }
-  }, [bookId, chapter, chapterKey, readChapter])
+  }, [chapterBookId, chapterNumber, chapterKey, readChapter])
 
   useEffect(() => {
     if (!start || !bookValues) return
@@ -200,9 +247,15 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
   }, [activeSuggestion])
 
   useLayoutEffect(() => {
+    if (!focusCrumb.current) return
+    breadcrumb.current?.querySelector<HTMLElement>('[aria-current="location"]')?.focus({ preventScroll: true })
+    focusCrumb.current = false
+  }, [location])
+
+  useLayoutEffect(() => {
     const list = verseResults.current
     const row = selectedRow.current
-    if (!list || !row) return
+    if (!active || !list || !row) return
     if (focusSelectedRow.current) {
       row.focus({ preventScroll: true })
       focusSelectedRow.current = false
@@ -215,7 +268,7 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
     } else if (bounds.bottom > view.bottom) {
       list.scrollTop += bounds.bottom - view.bottom
     }
-  }, [selected, currentWindow])
+  }, [active, selected, currentWindow, mosaic])
 
   function removeSegment(offset: number) {
     remainingLetters.current = []
@@ -266,8 +319,12 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
       event.preventDefault()
       const start = event.currentTarget.selectionStart ?? text.length
       const end = event.currentTarget.selectionEnd ?? start
-      const offset = start === end && (event.key === 'Backspace' || start === text.length) ? start - 1 : start
-      removeSegment(offset)
+      if (start === 0 && end === text.length) {
+        clearSearch()
+      } else {
+        const offset = start === end && (event.key === 'Backspace' || start === text.length) ? start - 1 : start
+        removeSegment(offset)
+      }
     } else if (event.key === 'Enter' && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
       const option = activeSuggestion ?? (!selected && suggestionsOpen
         ? options.find(candidate => candidate.exact) ?? (options.length === 1 ? options[0] : undefined)
@@ -296,15 +353,57 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
     }
   }
 
+  function openFolder(next?: BibleLocation) {
+    if (location?.bookId === next?.bookId && location?.chapter === next?.chapter) return
+    focusCrumb.current = true
+    setFolderIndex(0)
+    setDirectMatch(undefined)
+    setLocation(next)
+  }
+
+  function clearSearch() {
+    if (byText) setQuery('')
+    else {
+      remainingLetters.current = []
+      setDraft({ text: '', auto: false })
+      setDismissed(false)
+      setActiveIndex(-1)
+    }
+    inputRef.current?.focus()
+  }
+
+  function navigateFolders(event: KeyboardEvent<HTMLUListElement>) {
+    const offset = resultOffset(event, mosaic)
+    if (!offset) return
+    event.preventDefault()
+    const next = Math.min(Math.max(folderIndex + offset, 0), folders.length - 1)
+    event.currentTarget.children[next]?.querySelector('button')?.focus()
+  }
+
+  function navigateVerses(event: KeyboardEvent<HTMLUListElement>) {
+    const offset = resultOffset(event, mosaic)
+    if (!offset) return
+    event.preventDefault()
+    if (Math.abs(offset) === 1) {
+      moveVerse(offset < 0 ? -1 : 1, true)
+    } else {
+      const verse = visible[selectedIndex + offset]
+      if (verse) {
+        focusSelectedRow.current = true
+        selectVerse(verse)
+      }
+    }
+  }
+
   function selectVerse(verse: PassageVerse) {
-    if (byText) setTextMatch({ key: textKey, verse })
-    else if (search && start) setNavigation({ search, start, selected: verse, visible })
+    if (search && start) setNavigation({ search, start, selected: verse, visible })
+    else setDirectMatch({ key: directKey, verse })
   }
 
   function moveVerse(direction: -1 | 1, focusRow = false) {
     const verse = direction === -1 ? previousVerse : nextVerse
     if (!verse) return
-    if (byText) {
+    if (!byReference) {
       focusSelectedRow.current = focusRow
       selectVerse(verse)
       return
@@ -337,6 +436,7 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
       setDraft({ ...draft, location: { book: book.id, suffix } })
     }
     remainingLetters.current = []
+    setFolderIndex(0)
     setTranslation(next)
     setActiveIndex(-1)
     setDismissed(false)
@@ -351,10 +451,7 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
 
   function submitCue(action: (cue: ScriptureCue) => void, verse = selected) {
     if (busy || !verse || !themeReady) return
-    action({
-      id: existing?.id ?? crypto.randomUUID(), title: verseLabel(verse), kind: 'scripture', theme,
-      reference: { translation, book: verse.book.id, chapter: verse.chapter, verse: verse.verse },
-    })
+    action(cueForVerse(verse))
   }
 
   function actionKeys(event: KeyboardEvent<HTMLFormElement>) {
@@ -378,7 +475,11 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
   } else if (options.length) status = t('Choose a book to continue.')
   else if (bookText) status = t('Book not found. Try a book name or abbreviation.')
 
-  if (byText) {
+  if (openChapter !== undefined) {
+    status = chapterRows ? t('No verses in this chapter.') : t('Loading verses…')
+  } else if (!filtering && bookValues) {
+    status = t('No Bible books available.')
+  } else if (searchingText) {
     if (!textKey) status = t('Enter a few letters or words from a verse.')
     else if (!result) status = t('Searching verses…')
     else if ('error' in result) status = translateError(t, result.error)
@@ -394,16 +495,9 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
     }>
       <div className="scripture-toolbar">
         <div className="scripture-reference">
-          <div className="scripture-search-heading">
-            <label htmlFor={`${listId}-input`}>{byText ? t('Verse text') : t('Reference')}</label>
-            <div className="scripture-modes" role="group" aria-label={t('Search by')}>
-              <button type="button" className="button button-quiet" aria-pressed={!byText} onClick={() => changeMode(false)}>{t('Reference')}</button>
-              <button type="button" className="button button-quiet" aria-pressed={byText} onClick={() => changeMode(true)}>{t('Verse text')}</button>
-            </div>
-          </div>
           <div className="search-box">
             <Search size={17} aria-hidden="true" />
-            <input id={`${listId}-input`} role={byText ? undefined : 'combobox'}
+            <input aria-label={byText ? t('Verse text') : t('Reference')} role={byText ? undefined : 'combobox'}
               aria-autocomplete={byText ? undefined : 'list'} aria-expanded={byText ? undefined : suggestionsOpen}
               aria-controls={suggestionsOpen ? listId : undefined}
               aria-activedescendant={activeSuggestion ? `${listId}-${activeSuggestion.id}` : undefined}
@@ -416,6 +510,8 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
               onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); setActiveIndex(-1) }}
               onChange={byText ? event => setQuery(event.target.value) : changeReference}
               onKeyDown={byText ? textKeys : referenceKeys} />
+            {filtering && <button type="button" className="icon-button scripture-clear" aria-label={t('Clear search')}
+              title={t('Clear search')} onClick={clearSearch}><X size={15} aria-hidden="true" /></button>}
           </div>
           {suggestionsOpen && (
             <ul id={listId} className="scripture-suggestions" role="listbox" aria-label={t(segmentLabels[segment])}>
@@ -429,62 +525,106 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, onSa
             </ul>
           )}
         </div>
-        <label>
-          {t('Translation')}
-          <span className="scripture-translation">
-            <select value={translation} disabled={!translations.length}
-              onChange={event => changeTranslation(event.target.value)}>
-              {!translation && <option value="" disabled>
-                {translations.length ? t('Choose a translation') : settings ? t('No enabled translations') : translationError ? t('Translations unavailable') : t('Loading translations…')}
-              </option>}
-              {translations.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
-            </select>
-            <ChevronDown size={15} aria-hidden="true" />
-          </span>
-        </label>
-      </div>
-      {selected ? (
-        <section className="verse-browser" aria-label={t('Verse results')} onKeyDown={event => {
-          if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
-          event.preventDefault()
-          moveVerse(event.key === 'ArrowUp' ? -1 : 1, event.target instanceof HTMLElement && event.target.closest('.verse-result, .result-send') !== null)
-        }}>
-          <header className="verse-browser-header">
-            <p aria-live="polite"><BookOpen size={17} aria-hidden="true" /><strong>{title}</strong></p>
-            <div role="group" aria-label={byText ? t('Navigate matches') : t('Navigate verses')}>
-              <button type="button" className="icon-button" aria-label={byText ? t('Previous match') : t('Move up one verse')}
-                title={byText ? t('Previous match (↑)') : t('Previous verse (↑)')}
-                disabled={!previousVerse || !canNavigate} onClick={() => moveVerse(-1)}><ChevronUp size={17} aria-hidden="true" /></button>
-              <button type="button" className="icon-button" aria-label={byText ? t('Next match') : t('Move down one verse')}
-                title={byText ? t('Next match (↓)') : t('Next verse (↓)')}
-                disabled={!nextVerse || !canNavigate} onClick={() => moveVerse(1)}><ChevronDown size={17} aria-hidden="true" /></button>
-            </div>
-          </header>
-          <ul className="verse-results" ref={verseResults} aria-label={byText ? t('Matching verses') : t('Verses')} aria-busy={!canNavigate}>
-            {visible.map(verse => {
-              const label = verseLabel(verse)
-              return <li key={label} className={onLive ? 'result-with-send' : undefined}
-                onFocus={() => { if (label !== title) selectVerse(verse) }}>
-                <button type="button" className="verse-result" aria-pressed={label === title}
-                  ref={label === title ? selectedRow : undefined}
-                  onClick={event => {
-                    event.currentTarget.focus({ preventScroll: true })
-                    selectVerse(verse)
-                  }}>
-                  <strong>{label}</strong><span>{verse.text}</span>
-                </button>
-                {onLive && <SendToKioskButton name={label} disabled={busy || !themeReady} onClick={() => submitCue(onLive, verse)} />}
-              </li>
-            })}
-          </ul>
-          {!byText && currentWindow?.incomplete && <p className="verse-browser-error" role="status">{t('Some nearby verses could not be loaded.')}</p>}
-        </section>
-      ) : (
-        <div className="verse-preview" aria-live="polite">
-          <BookOpen size={17} aria-hidden="true" /><span>{unavailable || (error ? translateError(t, error) : status)}</span>
+        <div className="scripture-modes" role="group" aria-label={t('Search by')}>
+          <button type="button" className="button button-quiet" aria-pressed={!byText} onClick={() => changeMode(false)}>{t('Reference')}</button>
+          <button type="button" className="button button-quiet" aria-pressed={byText} onClick={() => changeMode(true)}>{t('Verse text')}</button>
         </div>
-      )}
-      {!pickOnly && <ThemePicker value={theme} onChange={setTheme} />}
+        <div className="scripture-translation">
+          <select aria-label={t('Translation')} value={translation} disabled={!translations.length}
+            onChange={event => changeTranslation(event.target.value)}>
+            {!translation && <option value="" disabled>
+              {translations.length ? t('Choose a translation') : settings ? t('No enabled translations') : translationError ? t('Translations unavailable') : t('Loading translations…')}
+            </option>}
+            {translations.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+          </select>
+          <ChevronDown size={15} aria-hidden="true" />
+        </div>
+      </div>
+      <div className="scripture-options">
+        {!filtering && <nav className="text-library-path" aria-label={t('Bible books')} ref={breadcrumb}>
+          {openBook
+            ? <button type="button" className="button button-quiet" onClick={() => openFolder()}>{t('Bible books')}</button>
+            : <span aria-current="location" tabIndex={-1}>{t('Bible books')}</span>}
+          {openBook && <>
+            <ChevronRight size={14} aria-hidden="true" />
+            {openChapter === undefined
+              ? <span aria-current="location" tabIndex={-1}>{openBook.name}</span>
+              : <button type="button" className="button button-quiet" title={openBook.name}
+                onClick={() => openFolder({ bookId: openBook.id })}>{openBook.name}</button>}
+          </>}
+          {openChapter !== undefined && <>
+            <ChevronRight size={14} aria-hidden="true" />
+            <span aria-current="location" tabIndex={-1}>{openChapterLabel}</span>
+          </>}
+        </nav>}
+        <div className="scripture-options-controls">
+          {!pickOnly && <BackgroundPicker active={active} value={theme} onChange={setTheme} />}
+          <div className="media-segment" role="group" aria-label={t('Bible view')}>
+            <button type="button" className="icon-button" title={t('List view')} aria-label={t('List view')}
+              aria-pressed={!mosaic} onClick={() => onViewChange('list')}><List size={17} aria-hidden="true" /></button>
+            <button type="button" className="icon-button" title={t('Mosaic view')} aria-label={t('Mosaic view')}
+              aria-pressed={mosaic} onClick={() => onViewChange('mosaic')}><LayoutGrid size={17} aria-hidden="true" /></button>
+          </div>
+        </div>
+      </div>
+      <section className="scripture-results" aria-label={t(filtering || openChapter !== undefined ? 'Verse results' : openBook ? 'Chapters' : 'Bible books')}>
+        {selected ? (
+          <>
+            <header className="verse-browser-header">
+              <p aria-live="polite"><BookOpen size={17} aria-hidden="true" /><strong>{title}</strong></p>
+              <div role="group" aria-label={byText ? t('Navigate matches') : t('Navigate verses')}>
+                <button type="button" className="icon-button" aria-label={byText ? t('Previous match') : t('Move up one verse')}
+                  title={byText ? t('Previous match (↑)') : t('Previous verse (↑)')}
+                  disabled={!previousVerse || !canNavigate} onClick={() => moveVerse(-1)}><ChevronUp size={17} aria-hidden="true" /></button>
+                <button type="button" className="icon-button" aria-label={byText ? t('Next match') : t('Move down one verse')}
+                  title={byText ? t('Next match (↓)') : t('Next verse (↓)')}
+                  disabled={!nextVerse || !canNavigate} onClick={() => moveVerse(1)}><ChevronDown size={17} aria-hidden="true" /></button>
+              </div>
+            </header>
+            <ul className={`scripture-scroll verse-results${mosaic ? ' verse-results--mosaic' : ''}`} ref={verseResults}
+              onKeyDown={navigateVerses} aria-label={byText && filtering ? t('Matching verses') : t('Verses')} aria-busy={!canNavigate}>
+              {visible.map(verse => {
+                const label = verseLabel(verse)
+                return <li key={label} className={onLive ? 'result-with-send' : undefined}
+                  onFocus={() => { if (label !== title) selectVerse(verse) }}>
+                  <button type="button" className="verse-result" aria-pressed={label === title}
+                    ref={label === title ? selectedRow : undefined}
+                    onClick={event => {
+                      event.currentTarget.focus({ preventScroll: true })
+                      selectVerse(verse)
+                    }}
+                    onDoubleClick={onLive ? () => submitCue(onLive, verse) : undefined}>
+                    <strong>{label}</strong><span>{verse.text}</span>
+                  </button>
+                  {onLive && <SendToKioskButton name={label} disabled={busy || !themeReady} onClick={() => submitCue(onLive, verse)} />}
+                </li>
+              })}
+            </ul>
+            {!byText && currentWindow?.incomplete && <p className="verse-browser-error" role="status">{t('Some nearby verses could not be loaded.')}</p>}
+          </>
+        ) : folders.length ? (
+          <ul key={`${translation}/${openBook?.id ?? ''}`} className={`scripture-scroll media-entries${mosaic ? ' media-entries--tile' : ''}`}
+            aria-label={t(openBook ? 'Chapters' : 'Bible books')} onKeyDown={navigateFolders}>
+            {folders.map(({ label, location }, index) => (
+              <li key={location.chapter ?? location.bookId}>
+                <button type="button" className="media-result" title={label}
+                  tabIndex={index === Math.min(folderIndex, folders.length - 1) ? 0 : -1}
+                  onFocus={() => setFolderIndex(index)} onClick={() => openFolder(location)}>
+                  <span className="item-icon media-folder-icon">
+                    {openBook ? <Folder size={mosaic ? 30 : 18} aria-hidden="true" /> : <BookOpen size={mosaic ? 30 : 18} aria-hidden="true" />}
+                  </span>
+                  <span className="media-result-text"><strong>{label}</strong></span>
+                  <ChevronRight className="media-folder-chevron" size={15} aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="verse-preview scripture-scroll" role="status">
+            <BookOpen size={17} aria-hidden="true" /><span>{unavailable || (error ? translateError(t, error) : status)}</span>
+          </div>
+        )}
+      </section>
     </EditorForm>
   )
 }

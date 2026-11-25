@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { BookOpen, FolderPlus, LibraryBig, Type } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
-import { copyLibraryTextSlide, mediaCue, type Item, type Project } from '../shared/model'
+import { copyLibraryTextSlide, mediaCue, type Item, type Project, type Theme } from '../shared/model'
 import { Dialog } from './Editors'
 import { MediaBrowser, type MediaFilter, type MediaView } from './MediaBrowser'
-import { ScriptureEditor } from './ScriptureEditor'
+import { ScriptureEditor, type ScriptureView } from './ScriptureEditor'
 import { TextSlideLibrary, type TextLibraryView } from './TextSlideLibrary'
 
 const tabs = [
@@ -16,7 +16,7 @@ const tabs = [
 export type CuePickerTab = (typeof tabs)[number]['id']
 
 export function CuePickerDialog({
-  tab, onTabChange, destination, project, busy, settingsRevision, onAdd, onCreateText, onCreatePlaylist, onClose,
+  tab, onTabChange, destination, project, busy, settingsRevision, textTheme, onAdd, onCreateText, onCreatePlaylist, onClose,
 }: {
   tab: CuePickerTab
   onTabChange: (tab: CuePickerTab) => void
@@ -24,6 +24,7 @@ export function CuePickerDialog({
   project: Pick<Project, 'sources' | 'slideLibraries' | 'textLibrary'>
   busy: boolean
   settingsRevision: number
+  textTheme: Theme
   onAdd: (item: Item) => void
   onCreateText: () => void
   onCreatePlaylist: () => void
@@ -32,6 +33,7 @@ export function CuePickerDialog({
   const { t } = useLanguage()
   const [filter, setFilter] = useState<MediaFilter>('all')
   const [mediaView, setMediaView] = useState<MediaView>('list')
+  const [scriptureView, setScriptureView] = useState<ScriptureView>('list')
   const [textView, setTextView] = useState<TextLibraryView>('list')
   const tabList = useRef<HTMLDivElement>(null)
 
@@ -69,13 +71,13 @@ export function CuePickerDialog({
           busy={busy} onSave={file => onAdd(mediaCue(file))} />
       </section>
       <section id="cue-picker-panel-text" role="tabpanel" aria-labelledby="cue-picker-tab-text" hidden={tab !== 'text'}>
-        <TextSlideLibrary items={project.textLibrary} libraries={project.slideLibraries}
+        <TextSlideLibrary active={tab === 'text'} items={project.textLibrary} libraries={project.slideLibraries} theme={textTheme}
           view={textView} onViewChange={setTextView} busy={busy} saving={false} error=""
           actions={{ kind: 'pick', onAdd: item => onAdd(copyLibraryTextSlide(item)) }} />
       </section>
-      <section id="cue-picker-panel-scripture" role="tabpanel" aria-labelledby="cue-picker-tab-scripture" hidden={tab !== 'scripture'}>
+      <section id="cue-picker-panel-scripture" role="tabpanel" aria-labelledby="cue-picker-tab-scripture" className="scripture-panel" hidden={tab !== 'scripture'}>
         <ScriptureEditor active={tab === 'scripture'} settingsRevision={settingsRevision} busy={busy}
-          onSave={onAdd} pickOnly />
+          view={scriptureView} onViewChange={setScriptureView} onSave={onAdd} pickOnly />
       </section>
       <div className="cue-picker-create">
         <button type="button" className="button button-quiet" onClick={onCreateText}>

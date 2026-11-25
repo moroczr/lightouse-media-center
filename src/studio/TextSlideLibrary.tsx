@@ -1,9 +1,10 @@
-import { useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { ChevronRight, Folder, FolderPlus, LayoutGrid, List, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { Audience } from '../shared/Audience'
 import { useLanguage } from '../shared/i18n'
 import { translateError } from '../shared/messages'
-import { textSlideCues, type LibraryTextSlide } from '../shared/model'
+import { textSlideCues, type LibraryTextSlide, type Theme } from '../shared/model'
+import { BackgroundPicker } from './BackgroundPicker'
 import { ItemIcon } from './CueList'
 import { AddToPlaylistButton, SendToKioskButton } from './Editors'
 
@@ -28,18 +29,22 @@ type TextLibraryActions =
   | { kind: 'pick'; onAdd: (item: LibraryTextSlide) => void }
   | {
     kind: 'browse'
+    onBackgroundChange: (theme: Theme) => void
+    backgroundBusy: boolean
     onCreate: (folder: string) => void
     onCreateLibrary: () => void
     onRenameLibrary: (folder: string) => void
     onDeleteLibrary: (folder: string) => void
     onEdit: (item: LibraryTextSlide) => void
     onDelete: (item: LibraryTextSlide) => void
+    onPreview: (item: LibraryTextSlide | undefined) => void
     onLive: (item: LibraryTextSlide) => void
   }
 
 export function TextSlideLibrary({
-  items, libraries, selectedId, initialFolder, saving, error, busy, view, onViewChange, actions,
+  active, items, libraries, selectedId, initialFolder, saving, error, busy, theme, view, onViewChange, actions,
 }: {
+  active: boolean
   items: LibraryTextSlide[]
   libraries: string[]
   selectedId?: string
@@ -47,6 +52,7 @@ export function TextSlideLibrary({
   saving: boolean
   error: string
   busy: boolean
+  theme: Theme
   view: TextLibraryView
   onViewChange: (view: TextLibraryView) => void
   actions: TextLibraryActions
@@ -76,6 +82,11 @@ export function TextSlideLibrary({
   const selectedRow = rows[selectedIndex]
   const selected = selectedRow?.kind === 'slide' ? selectedRow.item : undefined
   const crumbs = folder ? folder.split('/') : []
+  const onPreview = actions.kind === 'browse' ? actions.onPreview : undefined
+
+  useEffect(() => {
+    onPreview?.(selected)
+  }, [onPreview, selected])
 
   function openFolder(path: string) {
     setFolder(path)
@@ -161,11 +172,15 @@ export function TextSlideLibrary({
             )
           })}
         </nav>
-        <div className="media-segment" role="group" aria-label={t('Text slide view')}>
-          <button type="button" className="icon-button" title={t('List view')} aria-label={t('List view')}
-            aria-pressed={!mosaic} onClick={() => onViewChange('list')}><List size={17} aria-hidden="true" /></button>
-          <button type="button" className="icon-button" title={t('Mosaic view')} aria-label={t('Mosaic view')}
-            aria-pressed={mosaic} onClick={() => onViewChange('mosaic')}><LayoutGrid size={17} aria-hidden="true" /></button>
+        <div className="text-library-controls">
+          {actions.kind === 'browse' && <BackgroundPicker active={active} value={theme}
+            disabled={busy || actions.backgroundBusy} onChange={actions.onBackgroundChange} />}
+          <div className="media-segment" role="group" aria-label={t('Text slide view')}>
+            <button type="button" className="icon-button" title={t('List view')} aria-label={t('List view')}
+              aria-pressed={!mosaic} onClick={() => onViewChange('list')}><List size={17} aria-hidden="true" /></button>
+            <button type="button" className="icon-button" title={t('Mosaic view')} aria-label={t('Mosaic view')}
+              aria-pressed={mosaic} onClick={() => onViewChange('mosaic')}><LayoutGrid size={17} aria-hidden="true" /></button>
+          </div>
         </div>
       </div>
 
@@ -181,7 +196,7 @@ export function TextSlideLibrary({
                 <li key={row.key} className="text-library-row" onFocus={() => setSelection(row.key)}>
                   {mosaic && (
                     <div className="text-library-thumbnail" aria-hidden="true">
-                      {item ? <Audience cue={cues[0] ?? null} /> : <Folder size={36} />}
+                      {item ? <Audience cue={cues[0] ? { ...cues[0], theme } : null} /> : <Folder size={36} />}
                     </div>
                   )}
                   <button type="button" className="media-result text-library-row-main" title={name}
@@ -193,7 +208,10 @@ export function TextSlideLibrary({
                         event.currentTarget.focus({ preventScroll: true })
                         setSelection(row.key)
                       }
-                    }}>
+                    }}
+                    onDoubleClick={item && actions.kind === 'browse' ? () => {
+                      if (!busy) actions.onLive(item)
+                    } : undefined}>
                     {row.kind === 'folder' ? <>
                       {!mosaic && <Folder size={22} aria-hidden="true" />}
                       <span className="media-result-text"><strong>{name}</strong><span>{libraries.includes(row.path) ? t('Library') : t('Folder')}</span></span>

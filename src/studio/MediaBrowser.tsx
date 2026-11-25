@@ -27,7 +27,7 @@ function fileLocation(file: MediaFile, source: Source) {
   return [source.name, ...folders].join(' / ')
 }
 
-export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChange, onAddFolder, busy, onSave, onLive }: {
+export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChange, onAddFolder, busy, onSave, onPreview, onLive }: {
   sources: Source[];
   filter: MediaFilter;
   onFilterChange: (filter: MediaFilter) => void;
@@ -36,6 +36,7 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
   onAddFolder?: () => Promise<void>;
   busy: boolean;
   onSave?: (file: MediaFile) => void;
+  onPreview?: (file: MediaFile | undefined) => void;
   onLive?: (file: MediaFile) => void;
 }) {
   const { t } = useLanguage()
@@ -103,6 +104,10 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
   const selection = shown[selectedIndex]
   const selected = selection && 'kind' in selection ? selection : undefined
   const canAct = !!selected && !busy && !picking
+
+  useEffect(() => {
+    onPreview?.(selected)
+  }, [onPreview, selected])
 
   function act(action: (file: MediaFile) => void) {
     if (canAct) action(selected)
@@ -233,7 +238,10 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
                       }
                       event.currentTarget.focus({ preventScroll: true })
                       setSelectedPath(item.path)
-                    }}>
+                    }}
+                    onDoubleClick={isFile && onLive ? () => {
+                      if (!busy && !picking) onLive(item)
+                    } : undefined}>
                     {isFile ? <ItemIcon kind={item.kind} size={view === 'tile' ? 28 : 16} />
                       : <span className="item-icon media-folder-icon"><Folder size={view === 'tile' ? 30 : 18} aria-hidden="true" /></span>}
                     <span className="media-result-text">

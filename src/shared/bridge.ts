@@ -3,8 +3,8 @@ import { listen } from '@tauri-apps/api/event'
 import { addBrowserSlideBackground, loadBrowserSlideSettings, saveBrowserDefaultSlideTheme } from './browserSlideSettings'
 import { browserBibleSettings, importBrowserBible, loadBrowserBible, saveBrowserBibleSettings } from './browserBible'
 import {
-  type AudienceCue, type BiblePreferences, type BibleSettings, type Book, type Cue, type Display, type Group, type BackgroundImage, type MediaFile, type PlaybackAction, type Project,
-  type Reference, type SavedProject, type SlideKind, type SlideSettings, type Source, type Stage, type Theme, type Verse, emptyStage, isMedia, normalizeProject,
+  type AudienceCue, type AudienceTextCue, type BiblePreferences, type BibleSettings, type Book, type Cue, type Display, type Group, type BackgroundImage, type MediaFile, type PlaybackAction, type Project,
+  type Reference, type SavedProject, type SlideKind, type SlideSettings, type Source, type Stage, type TextCue, type Theme, type Verse, emptyStage, isMedia, normalizeProject,
 } from './model'
 import { formatScriptureCue, readAdjacentVerses, verseLabel } from './scripture'
 import { readLanguage, translate, type Message } from './messages'
@@ -418,7 +418,7 @@ async function mediaUrl(path: string) {
   return url
 }
 
-export async function resolveCue(cue: Cue): Promise<AudienceCue> {
+export async function resolveCue(cue: Exclude<Cue, TextCue> | AudienceTextCue): Promise<AudienceCue> {
   const base = { id: cue.id, title: cue.title, kind: cue.kind }
   if (cue.kind === 'text') return cue
   if (cue.kind === 'scripture') {

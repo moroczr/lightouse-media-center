@@ -2,8 +2,7 @@ import { useEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactN
 import { ArrowDown, ArrowLeft, ArrowUp, Folder, Plus, RadioTower, Trash2, X } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError } from '../shared/messages'
-import { builtInSlideDefaults, builtInThemes, kindNames, textCueTitle, type TextEntry, type TextSlide, type Theme } from '../shared/model'
-import { ThemePreview, ThemeSwatch, useSlideThemes } from '../shared/SlideThemes'
+import { kindNames, textCueTitle, type TextEntry, type TextSlide } from '../shared/model'
 
 export function Dialog({ title, children, onClose, className = '' }: {
   title: string; children: ReactNode; onClose: () => void; className?: string;
@@ -44,32 +43,6 @@ export function EditorForm({ children, actions, className = '', ...props }: Comp
       <div className="editor editor-content">{children}</div>
       {actions}
     </form>
-  )
-}
-
-export function ThemePicker({ value, onChange }: { value: Theme; onChange: (theme: Theme) => void }) {
-  const { t } = useLanguage()
-  const { settings } = useSlideThemes()
-  const options = [
-    ...builtInThemes.map(theme => ({ id: theme.id, name: t(theme.label), url: undefined })),
-    ...(settings?.backgrounds ?? []),
-  ]
-  return (
-    <fieldset className="theme-picker">
-      <legend>{t('Background')}</legend>
-      <div className="theme-picker-body">
-        <div className="theme-options">
-          {options.map(({ id, name, url }) => (
-            <label className={`theme-option${id === value ? ' selected' : ''}`} key={id} title={name}>
-              <input type="radio" name="theme" value={id} checked={id === value} onChange={() => onChange(id)} />
-              <ThemeSwatch theme={id} url={url} />
-              <span className="theme-option-name">{name}</span>
-            </label>
-          ))}
-        </div>
-        <ThemePreview theme={value} />
-      </div>
-    </fieldset>
   )
 }
 
@@ -134,13 +107,10 @@ export function TextEditor({ existing, onSave, library, busy = false }: {
   }
 }) {
   const { t } = useLanguage()
-  const { settings, error: themeError } = useSlideThemes()
   const [id] = useState(() => existing?.id ?? crypto.randomUUID())
   const [caption, setCaption] = useState(existing?.captionFromFirstEntry ? '' : existing?.title ?? '')
   const [libraryError, setLibraryError] = useState('')
   const [entries, setEntries] = useState<TextEntry[]>(() => existing?.entries ?? [{ id: crypto.randomUUID(), text: '' }])
-  const [chosenTheme, setTheme] = useState<Theme>()
-  const theme = chosenTheme ?? existing?.theme ?? settings?.defaultThemes.text ?? builtInSlideDefaults.text
   const entryToFocus = useRef<string | null>(null)
 
   const explicitCaption = caption.trim()
@@ -150,12 +120,10 @@ export function TextEditor({ existing, onSave, library, busy = false }: {
     kind: 'text',
     title: explicitCaption || textCueTitle(entries[0]?.text ?? '') || t(kindNames.text),
     entries: entries.map(entry => ({ ...entry, text: entry.text.trim() })),
-    theme,
     showCaption: existing?.showCaption === false && explicitCaption === existing.title.trim() ? false : undefined,
     captionFromFirstEntry: captionFromFirstEntry || undefined,
   }
-  const valid = !busy && !!(chosenTheme || existing || settings || themeError)
-    && slide.entries.length > 0 && slide.entries.every(entry => !!entry.text)
+  const valid = !busy && slide.entries.length > 0 && slide.entries.every(entry => !!entry.text)
 
   function saveToLibrary() {
     if (library && valid) setLibraryError(library.onSave(slide) ?? '')
@@ -238,7 +206,6 @@ export function TextEditor({ existing, onSave, library, busy = false }: {
         })}
       </ol>
       <button type="button" className="button text-entry-add" onClick={addEntry}><Plus size={16} /> {t('Add text entry')}</button>
-      <ThemePicker value={theme} onChange={setTheme} />
     </EditorForm>
   )
 }
