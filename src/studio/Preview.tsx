@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Ban, ChevronLeft, ChevronRight, Monitor, Pause, Play, RadioTower, RotateCcw, RotateCw, Square, Volume2, VolumeX } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError } from '../shared/messages'
@@ -7,6 +7,7 @@ import { adjacentVerses } from '../shared/bridge'
 import { clockTime, isMedia, type AudienceCue, type PlaybackAction, type Reference, type Stage } from '../shared/model'
 import type { PassageVerse } from '../shared/scripture'
 import { ItemIcon } from './CueList'
+import type { CueDropTarget } from './useCueDrag'
 
 interface PreviewProps {
   stage: Stage
@@ -23,10 +24,22 @@ interface PreviewProps {
   onPrevious: () => void
   onNext: () => void
   onGoLive: () => void
+  dropTarget: CueDropTarget | null
   onBlackout: () => void
   onNavigateVerse: (verse: PassageVerse) => void
   textNavigation?: { index: number; total: number; onMove: (direction: -1 | 1) => void }
   onPlayback: (action: PlaybackAction) => void
+}
+
+function CueDropScreen({ children, target, prompt, active }: {
+  children: ReactNode; target?: CueDropTarget; prompt: string; active: boolean;
+}) {
+  return (
+    <div className="preview-screen" data-cue-drop-target={target}>
+      {children}
+      {target && active && <div className="cue-drop-prompt" aria-hidden="true">{prompt}</div>}
+    </div>
+  )
 }
 
 function MediaPlayback({ stage, onAction }: {
@@ -185,9 +198,9 @@ export function Preview(props: PreviewProps) {
             <h2 id="live-heading"><Monitor size={15} /> {t('Live output')}</h2>
             <span className={`status-pill${live ? ' status-pill--live' : ''}`}><span />{t(status)}</span>
           </header>
-          <div className="preview-screen">
+          <CueDropScreen target={props.busy ? undefined : 'live'} active={props.dropTarget === 'live'} prompt={t('Drop to go live')}>
             <Audience key={stage.revision} cue={audience} background={props.background} stage={props.kiosk ? stage : { ...stage, playing: false }} />
-          </div>
+          </CueDropScreen>
           <div className="preview-caption">
             <span>{stage.blackout ? t('Display is black') : audience?.title ?? (props.background ? t('Kiosk background') : t('No live cue'))}</span>
             {audience && !media && <span className="subtle">{stage.cue ? t('Audience view') : t('Standby preview')}</span>}
@@ -210,10 +223,10 @@ export function Preview(props: PreviewProps) {
             <h2 id="next-heading"><ChevronRight size={17} /> {t('Next up')}</h2>
             {props.next && <span className="status-pill status-pill--next">{t('Queued')}</span>}
           </header>
-          <div className="preview-screen">
+          <CueDropScreen target="next" active={props.dropTarget === 'next'} prompt={t('Drop to queue')}>
             <Audience key={props.next?.id ?? 'empty'} cue={props.next} />
             {props.nextError && <div className="slide-empty slide-overlay" role="status">{translateError(t, props.nextError)}</div>}
-          </div>
+          </CueDropScreen>
           <div className="preview-caption">
             <span>{props.nextTitle ?? t('No cue selected')}</span>
             {props.next && <ItemIcon kind={props.next.kind} size={13} />}

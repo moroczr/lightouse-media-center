@@ -197,6 +197,12 @@ button.icon-button:disabled { opacity: .35; }
   outline: 1px solid var(--subtle-line); overflow: hidden; background: var(--inset);
 }
 .preview-panel--live .preview-screen { outline-color: var(--border); }
+.cue-drop-prompt {
+  position: absolute; inset: 0; display: grid; place-items: start center; padding: 10px; pointer-events: none;
+  border: 2px dashed var(--accent); border-radius: inherit; background: #121923dd;
+  color: var(--ink); font-size: 13px; font-weight: 830;
+}
+.preview-panel--live .cue-drop-prompt { border-color: var(--live); }
 .preview-caption { min-height: 28px; color: var(--ink); font-size: 11px; font-weight: 760; }
 .preview-caption > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .preview-caption .subtle { color: var(--soft); font-size: 10px; font-weight: 680; white-space: nowrap; }
@@ -314,6 +320,15 @@ button.icon-button:disabled { opacity: .35; }
 .cue-expand { display: grid; place-items: center; border: 0; background: transparent; color: var(--soft); border-radius: 4px; padding: 0; width: 19px; height: 26px; flex: 0 0 auto; }
 .cue-expand:hover { color: var(--ink); background: var(--hover); }
 .cue-select { display: flex; align-items: center; text-align: left; gap: 9px; flex: 1; min-width: 0; min-height: 29px; padding: 0; background: none; border: 0; border-radius: 6px; }
+.cue-select--draggable { cursor: grab; -webkit-user-select: none; user-select: none; }
+.cue-select--draggable:active,
+.studio-shell.studio-shell--dragging * { cursor: grabbing; }
+.cue-drag-preview {
+  position: fixed; z-index: 8; top: 0; left: 0; display: flex; align-items: center; gap: 8px;
+  max-width: min(280px, calc(100vw - 16px)); padding: 4px 10px 4px 5px;
+  background: var(--raised); border: 1px solid var(--accent-border-strong); border-radius: 8px;
+  box-shadow: 0 6px 18px #081017a0; pointer-events: none;
+}
 .item-icon { width: 27px; height: 27px; border-radius: 6px; display: inline-grid; flex: none; place-items: center; }
 .item-icon--text { color: #aed4ff; background: #263e55; }
 .item-icon--scripture { color: #c2ccff; background: #343c60; }

@@ -25,6 +25,7 @@ import { MediaBrowser, type MediaView } from './MediaBrowser'
 import { TextSlideLibrary } from './TextSlideLibrary'
 import { Preview } from './Preview'
 import { SettingsDialog } from './Settings'
+import { useCueDrag, type CueDropTarget } from './useCueDrag'
 
 type Editor =
   | { kind: 'settings' }
@@ -93,6 +94,7 @@ export default function Studio() {
   const saves = useRef(Promise.resolve())
   const displayInUse = useRef<string | null>(null)
   const displayOperation = useRef(0)
+  const drag = useCueDrag(dropCue)
 
   const active = project.playlists.find(list => list.id === project.activeId) ?? project.playlists[0]
   const currentCueId = stage.cue?.id
@@ -233,7 +235,7 @@ export default function Studio() {
     if (candidate) setCueId(candidate.id)
   }
 
-  async function send(item: Cue, advance: boolean, textCues: TextCue[] = []) {
+  async function send(item: Cue, mode: 'advance' | 'keep-queue' | 'close-editor', textCues: TextCue[] = []) {
     if (transmittingRef.current) return
     transmittingRef.current = true
     setTransmitting(true)
@@ -241,10 +243,10 @@ export default function Studio() {
       const cue = await resolveCue(item)
       await present(cue)
       setLiveTextCues(textCues)
-      if (advance) {
+      if (mode === 'advance') {
         const currentIndex = sequence.findIndex(candidate => candidate.id === item.id)
         setCueId(current => current === item.id ? sequence[currentIndex + 1]?.id ?? null : current)
-      } else {
+      } else if (mode === 'close-editor') {
         setEditor(null)
       }
       if (!kiosk) tell('Cue staged. Launch Kiosk to present it.')
@@ -258,7 +260,7 @@ export default function Studio() {
 
   function sendTextSlide(slide: TextSlide) {
     const cues = textSlideCues(slide)
-    if (cues.length) void send(cues[0], false, cues)
+    if (cues.length) void send(cues[0], 'close-editor', cues)
   }
 
   function showAdjacentTextSlide(direction: -1 | 1) {
@@ -268,12 +270,19 @@ export default function Studio() {
   }
 
   function goLive() {
-    if (queued && next) void send(queued, true)
+    if (queued && next) void send(queued, 'advance')
   }
 
   function takeCue(id: string) {
     const cue = sequence.find(item => item.id === id)
-    if (cue) void send(cue, true)
+    if (cue) void send(cue, 'advance')
+  }
+
+  function dropCue(id: string, destination: CueDropTarget) {
+    const cue = sequence.find(item => item.id === id)
+    if (!cue) return
+    if (destination === 'live') void send(cue, 'keep-queue')
+    else cueItem(cue.id)
   }
 
   function showAdjacentVerse(verse: PassageVerse) {
@@ -502,7 +511,7 @@ export default function Studio() {
   const sidebarAction = sidebarOpen ? t('Collapse sidebar') : t('Expand sidebar')
 
   return (
-    <div className="studio-shell">
+    <div className={`studio-shell${drag.preview ? ' studio-shell--dragging' : ''}`} {...drag.handlers}>
       <header className="appbar">
         <div className="playlist-controls" role="group" aria-label={t('Workspace controls')}>
           <button type="button" className="icon-button" aria-label={sidebarAction} title={sidebarAction}
@@ -609,7 +618,7 @@ export default function Studio() {
               kiosk={kiosk} busy={transmitting} canGoLive={!!queued && !!next}
               hasPrevious={index > 0 || (index < 0 && sequence.length > 0)} hasNext={index >= 0 && index < sequence.length - 1}
               onPrevious={() => nudge(-1)} onNext={() => nudge(1)} onGoLive={goLive}
-              onBlackout={toggleBlackout}
+              dropTarget={drag.preview?.target ?? null} onBlackout={toggleBlackout}
               onNavigateVerse={showAdjacentVerse}
               textNavigation={liveTextIndex >= 0 && liveTextCues.length > 1 ? {
                 index: liveTextIndex, total: liveTextCues.length, onMove: showAdjacentTextSlide,
@@ -635,7 +644,7 @@ export default function Studio() {
                     else next.add(id)
                     return next
                   })}
-                  onCue={cueItem} onGoLive={takeCue} onEdit={editItem} onMove={moveItem}
+                  onCue={cueItem} onGoLive={takeCue} onCuePointerDown={drag.start} onEdit={editItem} onMove={moveItem}
                   onAdd={parent => setEditor({ kind: 'choose', parent })}
                   onRemove={(item, parent) => setEditor({ kind: 'remove', parent, item })}
                 />
@@ -644,6 +653,13 @@ export default function Studio() {
           </div>
         </main>
       </div>
+
+      {drag.preview && (
+        <div ref={drag.previewRef} className="cue-drag-preview" aria-hidden="true">
+          <ItemIcon kind={drag.preview.item.kind} />
+          <span className="cue-title">{drag.preview.item.title}</span>
+        </div>
+      )}
 
       {notice && <div className={`toast${notice.error ? ' toast--error' : ''}`} role={notice.error ? 'alert' : 'status'}>
         {notice.error ? <CircleAlert size={17} /> : <Monitor size={17} />}<span>{translateError(t, notice.text)}</span>
@@ -687,10 +703,10 @@ export default function Studio() {
             onSave: slide => saveLibraryTextSlide(editor.parent, slide, editor.folder),
           }} />
         )}
-        {editor.kind === 'scripture' && <ScriptureEditor existing={editor.existing} busy={transmitting} onSave={cue => saveItem(editor.parent, cue, editor.existing)} onLive={cue => void send(cue, false)} />}
+        {editor.kind === 'scripture' && <ScriptureEditor existing={editor.existing} busy={transmitting} onSave={cue => saveItem(editor.parent, cue, editor.existing)} onLive={cue => void send(cue, 'close-editor')} />}
         {editor.kind === 'media' && <MediaBrowser sources={project.sources} initialFilter={editor.filter}
           view={mediaView} onViewChange={setMediaView} onAddFolder={addSource} busy={transmitting}
-          onSave={file => addItem(editor.parent, mediaCue(file))} onLive={file => void send(mediaCue(file), false)}
+          onSave={file => addItem(editor.parent, mediaCue(file))} onLive={file => void send(mediaCue(file), 'close-editor')}
         />}
         {editor.kind === 'kiosk-background' && <KioskBackgroundEditor background={background} loadError={backgroundError} />}
         {editor.kind === 'remove' && <div className="editor">

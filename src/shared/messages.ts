@@ -123,6 +123,8 @@ const hungarian = {
   'Staged': 'Előkészítve',
   'Standby': 'Készenlét',
   'Live output': 'Vetített kép',
+  'Drop to go live': 'Húzd ide a vetítéshez',
+  'Drop to queue': 'Húzd ide az előkészítéshez',
   'Display is black': 'A kijelző elsötétítve',
   'Kiosk background': 'A vetítő háttere',
   'No live cue': 'Nincs vetített műsorelem',
