@@ -64,6 +64,7 @@ it('leaves focus in an empty search and picks a single media result only on Ente
   expect(document.activeElement).toBe(row)
   expect(await press('ArrowLeft')).toBe(false)
   expect(await press('Enter', { ctrlKey: true })).toBe(false)
+  expect(await press(' ')).toBe(false)
   expect(pick).not.toHaveBeenCalled()
   expect(await press('Enter')).toBe(true)
   expect(pick).toHaveBeenCalledExactlyOnceWith(expect.objectContaining(file))
@@ -75,7 +76,7 @@ it('moves through a partial slide grid and returns from search to the selected r
   }))
   const pick = vi.fn()
   await render(<TextSlideLibrary active items={items} libraries={['Library']} initialFolder="Library"
-    saving={false} error="" busy={false} theme="plain" view="mosaic" onViewChange={vi.fn()}
+    saving={false} error="" busy={false} theme="plain" view="grid" onViewChange={vi.fn()}
     actions={{ kind: 'pick', onAdd: pick }} />)
   const search = container.querySelector<HTMLInputElement>('input[type="search"]')!
   const grid = container.querySelector('ul')!
@@ -104,17 +105,27 @@ it('moves through a partial slide grid and returns from search to the selected r
   expect(pick).toHaveBeenCalledExactlyOnceWith(items[3])
 })
 
-it('opens a media folder and sends the selected file live only on Ctrl+Enter', async () => {
+it('sends the arrow-selected media file live with Space or Ctrl+Enter', async () => {
   vi.spyOn(bridge, 'listMedia').mockResolvedValue([file])
   const live = vi.fn()
+  const preview = vi.fn()
   await render(<MediaBrowser sources={[source]} filter="all" onFilterChange={vi.fn()} view="list"
-    onViewChange={vi.fn()} busy={false} onLive={live} />)
+    onViewChange={vi.fn()} busy={false} onPreview={preview} onLive={live} />)
   await act(async () => container.querySelector<HTMLButtonElement>('.media-result')!.click())
   expect(document.activeElement).toBe(container.querySelector('input[type="search"]'))
   await press('ArrowDown')
   expect(document.activeElement?.textContent).toContain(file.name)
+  expect(preview).toHaveBeenLastCalledWith(expect.objectContaining(file))
   expect(await press('Enter')).toBe(false)
+  expect(await press(' ', { ctrlKey: true })).toBe(false)
   expect(live).not.toHaveBeenCalled()
+  expect(await press(' ')).toBe(true)
+  expect(await press(' ', { repeat: true })).toBe(true)
+  expect(live).toHaveBeenCalledExactlyOnceWith(expect.objectContaining(file))
+  container.querySelector<HTMLInputElement>('input[type="search"]')!.focus()
+  expect(await press(' ')).toBe(false)
+  expect(live).toHaveBeenCalledTimes(1)
+  live.mockClear()
   expect(await press('Enter', { ctrlKey: true })).toBe(true)
   expect(live).toHaveBeenCalledExactlyOnceWith(expect.objectContaining(file))
 })
@@ -149,4 +160,135 @@ it('pages past both ends of the displayed verse window without submitting a cue'
   expect(save).not.toHaveBeenCalled()
   await press('Enter')
   expect(save).toHaveBeenCalledExactlyOnceWith(cue)
+})
+
+it('moves focus from a completed Bible reference to the previewed verse and sends it live with Space', async () => {
+  const book = { id: 'GEN', name: 'Genesis', chapters: 1 }
+  vi.spyOn(bridge.bible, 'settings').mockResolvedValue({
+    defaultId: 'test', databases: [{ id: 'test', name: 'Test', enabled: true, fileName: null }],
+  })
+  vi.spyOn(bridge.bible, 'books').mockResolvedValue([book])
+  vi.spyOn(bridge.bible, 'verses').mockResolvedValue([{ verse: 1, text: 'First' }, { verse: 2, text: 'Second' }])
+  const preview = vi.fn()
+  const live = vi.fn()
+  await render(<ScriptureEditor active settingsRevision={0} busy={false}
+    view="list" onViewChange={vi.fn()} onPreview={preview} onLive={live} />)
+  const input = container.querySelector<HTMLInputElement>('[role="combobox"]')!
+  await act(async () => {
+    input.focus()
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Genesis 1:1')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(await press(' ')).toBe(false)
+  expect(await press('ArrowDown')).toBe(true)
+  expect(document.activeElement?.textContent).toContain('Genesis 1:2')
+  expect(preview).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Genesis 1:2' }))
+  expect(live).not.toHaveBeenCalled()
+  expect(await press(' ')).toBe(true)
+  expect(live).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    reference: { translation: 'test', book: 'GEN', chapter: 1, verse: 2 },
+  }))
+})
+
+it.each(['list', 'grid'] as const)('browses books and chapters before presenting a verse in %s view', async view => {
+  const book = { id: 'GEN', name: 'Genesis', chapters: 2 }
+  vi.spyOn(bridge.bible, 'settings').mockResolvedValue({
+    defaultId: 'test', databases: [{ id: 'test', name: 'Test', enabled: true, fileName: null }],
+  })
+  vi.spyOn(bridge.bible, 'books').mockResolvedValue([book])
+  vi.spyOn(bridge.bible, 'verses').mockResolvedValue([{ verse: 1, text: 'First' }, { verse: 2, text: 'Second' }])
+  const live = vi.fn()
+  const preview = vi.fn()
+  await render(<ScriptureEditor active settingsRevision={0} busy={false}
+    view={view} onViewChange={vi.fn()} onPreview={preview} onLive={live} />)
+  const rows = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>(`ul[aria-label="${label}"] [data-result-button]`))
+  const click = async (button: HTMLButtonElement, detail: number, type = 'click') => {
+    await act(async () => { button.dispatchEvent(new MouseEvent(type, { detail, bubbles: true })) })
+  }
+
+  await click(rows('Bible books')[0], 1)
+  await click(rows('Chapters')[0], 2)
+  expect(rows('Chapters')).toHaveLength(2)
+  await act(async () => rows('Chapters')[0].focus())
+  if (view === 'grid') {
+    // Use an explicit grid width because jsdom does not compute CSS grid tracks.
+    container.querySelector<HTMLUListElement>('ul[aria-label="Chapters"]')!.style.gridTemplateColumns = '120px 120px'
+  }
+  await press(view === 'grid' ? 'ArrowRight' : 'ArrowDown')
+  expect(document.activeElement).toBe(rows('Chapters')[1])
+  await click(rows('Chapters')[1], 1)
+  await click(rows('Verses')[0], 2)
+  await click(rows('Verses')[0], 2, 'dblclick')
+  expect(live).not.toHaveBeenCalled()
+  const verse = rows('Verses')[1]
+  await click(verse, 1)
+  expect(preview).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Genesis 2:2' }))
+  await click(verse, 2)
+  await click(verse, 2, 'dblclick')
+  expect(live).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ title: 'Genesis 2:2' }))
+})
+
+it('uses the selected media row for drag preview and live actions and disables sending while busy', async () => {
+  vi.spyOn(bridge, 'listMedia').mockResolvedValue([file])
+  const live = vi.fn()
+  const preview = vi.fn()
+  const startDrag = vi.fn()
+  const panel = (busy: boolean) => <MediaBrowser sources={[source]} filter="all" onFilterChange={vi.fn()}
+    view="list" onViewChange={vi.fn()} busy={busy} onPreview={preview} onLive={live} onCuePointerDown={startDrag} />
+  await render(panel(false))
+  await act(async () => container.querySelector<HTMLButtonElement>('.media-result')!.click())
+  const row = container.querySelector<HTMLButtonElement>('.media-result')!
+  await act(async () => { row.dispatchEvent(new Event('pointerdown', { bubbles: true })) })
+  expect(startDrag).toHaveBeenCalledOnce()
+  const [, drag] = startDrag.mock.calls[0]
+  await act(async () => drag.preview())
+  expect(preview).toHaveBeenLastCalledWith(expect.objectContaining(file))
+  expect(live).not.toHaveBeenCalled()
+  await act(async () => drag.live())
+  expect(live).toHaveBeenCalledExactlyOnceWith(expect.objectContaining(file))
+
+  await render(panel(true))
+  const busyRow = container.querySelector<HTMLButtonElement>('.media-result')!
+  await act(async () => {
+    busyRow.focus()
+    busyRow.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+  })
+  await press(' ')
+  expect(startDrag).toHaveBeenCalledTimes(1)
+  expect(live).toHaveBeenCalledTimes(1)
+  expect(container.querySelector<HTMLButtonElement>('.result-send')!.disabled).toBe(true)
+})
+
+it('keeps a newer text search open when an earlier verse finishes going live', async () => {
+  const book = { id: 'GEN', name: 'Genesis', chapters: 1 }
+  vi.spyOn(bridge.bible, 'settings').mockResolvedValue({
+    defaultId: 'test', databases: [{ id: 'test', name: 'Test', enabled: true, fileName: null }],
+  })
+  vi.spyOn(bridge.bible, 'books').mockResolvedValue([book])
+  const search = vi.spyOn(bridge.bible, 'search').mockImplementation(async (_translation, text) => [
+    { book, chapter: 1, verse: text === 'first' ? 1 : 2, text },
+  ])
+  let finish!: (success: boolean) => void
+  const live = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve }))
+  await render(<ScriptureEditor active settingsRevision={0} busy={false}
+    view="list" onViewChange={vi.fn()} onLive={live} />)
+  const mode = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Verse text')!
+  await act(async () => mode.click())
+  const input = container.querySelector<HTMLInputElement>('.search-box input')!
+  async function lookup(text: string) {
+    await act(async () => {
+      input.focus()
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, text)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => { await vi.waitFor(() => expect(search).toHaveBeenCalledWith('test', text)) })
+  }
+  await lookup('first')
+  await act(async () => container.querySelector<HTMLButtonElement>('.result-send')!.click())
+  expect(live).toHaveBeenCalledOnce()
+  await lookup('second')
+  await act(async () => finish(true))
+  expect(input.value).toBe('second')
+  expect(container.querySelector('ul[aria-label="Matching verses"] strong')?.textContent).toBe('Genesis 1:2')
+  expect(document.activeElement).toBe(input)
 })

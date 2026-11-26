@@ -1,11 +1,12 @@
 import type { KeyboardEvent } from 'react'
 
-export function resultColumns(list: HTMLUListElement, grid: boolean) {
+function resultColumns(list: HTMLUListElement, grid: boolean) {
   return grid ? getComputedStyle(list).gridTemplateColumns.trim().split(/\s+/).length : 1
 }
 
 export function navigateResultList(
   event: KeyboardEvent<HTMLElement>, list: HTMLUListElement | null, selectedIndex: number, grid: boolean,
+  onBoundary?: (direction: -1 | 1) => void,
 ) {
   if (!list?.childElementCount || event.ctrlKey) return
   const { key, target } = event
@@ -28,7 +29,12 @@ export function navigateResultList(
     if (key === 'ArrowRight' && column + 1 < columns && index < last) index++
   }
 
-  const button = list.children[index]?.querySelector('button')
+  if (inResults && index === selectedIndex && onBoundary) {
+    if (index === 0 && (key === 'ArrowUp' || key === 'ArrowLeft')) return onBoundary(-1)
+    if (index === last && (key === 'ArrowDown' || key === 'ArrowRight')) return onBoundary(1)
+  }
+
+  const button = list.children[index]?.querySelector<HTMLButtonElement>('[data-result-button]')
   button?.focus({ preventScroll: true })
   button?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }

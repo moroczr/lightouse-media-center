@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
-import { Check, ChevronRight, CircleAlert, Folder, FolderOpen, FolderPlus, LayoutGrid, List, Search } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Check, ChevronRight, CircleAlert, Folder, FolderOpen, FolderPlus, Search } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError, type Message } from '../shared/messages'
 import { desktop, listMedia, pickMedia } from '../shared/bridge'
 import { type MediaFile, type Source } from '../shared/model'
 import { ItemIcon } from './CueList'
-import { AddToPlaylistButton, SendToKioskButton } from './Editors'
-import { navigateResultList } from './resultNavigation'
+import { AddToPlaylistButton } from './Editors'
+import { ResultBrowser, useResultBrowser, type BrowserItem } from './ResultBrowser'
+import { ViewModeSwitch, type ViewMode } from './ViewModeSwitch'
 import type { CueDragStart } from './useCueDrag'
 
-export type MediaView = 'list' | 'tile'
 export type MediaFilter = 'all' | MediaFile['kind']
 type CatalogItem = MediaFile & { location: string }
 type MediaLocation = { kind: 'source'; id: string } | { kind: 'file'; file: MediaFile }
@@ -33,8 +33,8 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
   sources: Source[];
   filter: MediaFilter;
   onFilterChange: (filter: MediaFilter) => void;
-  view: MediaView;
-  onViewChange: (view: MediaView) => void;
+  view: ViewMode;
+  onViewChange: (view: ViewMode) => void;
   onAddFolder?: () => Promise<void>;
   busy: boolean;
   onSave?: (file: MediaFile) => void;
@@ -43,12 +43,12 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
   onCuePointerDown?: CueDragStart;
 }) {
   const { t } = useLanguage()
+  const grid = view === 'grid'
   const [query, setQuery] = useState('')
   const [selectedPath, setSelectedPath] = useState<string>()
   const [location, setLocation] = useState<MediaLocation>()
   const [picking, setPicking] = useState(false)
   const [pickerError, setPickerError] = useState('')
-  const resultList = useRef<HTMLUListElement>(null)
   const searchInput = useRef<HTMLInputElement>(null)
   const [catalog, setCatalog] = useState<{ sources: Source[]; items: CatalogItem[]; unavailable: string[] }>()
   const browseSources = !!onLive
@@ -116,23 +116,24 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
     if (canAct) action(selected)
   }
 
-  function navigate(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.defaultPrevented || event.nativeEvent.isComposing || event.altKey || event.metaKey || event.shiftKey) return
-    if (event.key !== 'Enter') {
-      if (!busy && !picking) navigateResultList(event, resultList.current, selectedIndex, view === 'tile')
-      return
-    }
-
-    const target = event.target
-    const inResults = target instanceof Node && !!resultList.current?.contains(target)
-
-    if (inResults || target instanceof HTMLInputElement || event.ctrlKey) {
-      const action = event.ctrlKey ? onLive : onSave
-      if (!selected || !action) return
-      event.preventDefault()
-      if (!event.repeat) act(action)
-    }
-  }
+  const browser = useResultBrowser({
+    selectedIndex, grid, disabled: busy || picking,
+    items: shown.map((item): BrowserItem => {
+      const common = { key: item.path, label: item.name, select: () => setSelectedPath(item.path) }
+      if (!('kind' in item)) return {
+        ...common, title: desktop ? item.path : item.name, description: desktop ? item.path : t('Folder'),
+        icon: <span className="item-icon media-folder-icon"><Folder size={grid ? 30 : 18} aria-hidden="true" /></span>,
+        open: () => openLocation({ kind: 'source', id: item.id }),
+      }
+      return {
+        ...common, title: item.path, description: item.location, kind: item.kind,
+        icon: <ItemIcon kind={item.kind} size={grid ? 28 : 16} />,
+        badge: item.kind === 'audio' || !onLive ? t(item.kind === 'video' ? 'Movie' : 'Audio') : undefined,
+        accessory: !onLive && <Check className="media-result-check" size={15} aria-hidden="true" />,
+        pick: onSave && (() => onSave(item)), live: onLive && (() => onLive(item)),
+      }
+    }),
+  })
 
   function openLocation(next?: MediaLocation) {
     setLocation(next)
@@ -159,7 +160,7 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
   }
 
   return (
-    <div className="editor media-browser" onKeyDown={navigate}>
+    <div className="editor media-browser" onKeyDown={browser.onKeyDown}>
       <div className="media-toolbar">
         <label className="search-box">
           <Search size={17} aria-hidden="true" />
@@ -190,12 +191,7 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
               onClick={() => onFilterChange(option.value)}>{t(option.label)}</button>
           ))}
         </div>
-        <div className="media-segment" role="group" aria-label={t('Media view')}>
-          <button className="icon-button" title={t('List view')} aria-label={t('List view')} aria-pressed={view === 'list'}
-            onClick={() => onViewChange('list')}><List size={17} /></button>
-          <button className="icon-button" title={t('Tile view')} aria-label={t('Tile view')} aria-pressed={view === 'tile'}
-            onClick={() => onViewChange('tile')}><LayoutGrid size={17} /></button>
-        </div>
+        <ViewModeSwitch view={view} onChange={onViewChange} label="Media view" gridLabel="Tile view" />
       </div>
 
       {pickerError && <p className="media-warning" role="alert"><CircleAlert size={15} />{translateError(t, pickerError)}</p>}
@@ -205,50 +201,7 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
 
       <div className="media-results" role="region" aria-label={t('Media results')} aria-busy={loading}>
         {shown.length ? (
-          <ul ref={resultList} className={`media-entries media-entries--${view}`}>
-            {shown.map((item, index) => {
-              const isFile = 'kind' in item
-              const startDrag = isFile && onCuePointerDown && onLive && !busy && !picking
-                ? (event: PointerEvent<HTMLButtonElement>) => onCuePointerDown(event, {
-                  title: item.name, kind: item.kind,
-                  preview: () => setSelectedPath(item.path),
-                  live: () => onLive(item),
-                }) : undefined
-              return (
-                <li key={item.path} className={isFile && onLive ? 'result-with-send' : undefined}
-                  onFocus={() => setSelectedPath(item.path)}>
-                  <button type="button" className={startDrag ? 'media-result cue-draggable' : 'media-result'}
-                    aria-pressed={isFile ? selectedIndex === index : undefined} onPointerDown={startDrag}
-                    tabIndex={index === Math.max(0, selectedIndex) ? 0 : -1} title={isFile || desktop ? item.path : item.name}
-                    onClick={event => {
-                      if (!isFile) {
-                        openLocation({ kind: 'source', id: item.id })
-                        return
-                      }
-                      event.currentTarget.focus({ preventScroll: true })
-                      setSelectedPath(item.path)
-                    }}
-                    onDoubleClick={isFile && onLive ? () => {
-                      if (!busy && !picking) onLive(item)
-                    } : undefined}>
-                    {isFile ? <ItemIcon kind={item.kind} size={view === 'tile' ? 28 : 16} />
-                      : <span className="item-icon media-folder-icon"><Folder size={view === 'tile' ? 30 : 18} aria-hidden="true" /></span>}
-                    <span className="media-result-text">
-                      <strong>{item.name}</strong>
-                      <span>{isFile ? item.location : desktop ? item.path : t('Folder')}</span>
-                    </span>
-                    {isFile ? <>
-                      {(item.kind === 'audio' || !onLive) && (
-                        <span className="media-result-type">{item.kind === 'video' ? t('Movie') : t('Audio')}</span>
-                      )}
-                      {!onLive && <Check className="media-result-check" size={15} aria-hidden="true" />}
-                    </> : <ChevronRight className="media-folder-chevron" size={15} aria-hidden="true" />}
-                  </button>
-                  {isFile && onLive && <SendToKioskButton name={item.name} disabled={busy || picking} onClick={() => onLive(item)} />}
-                </li>
-              )
-            })}
-          </ul>
+          <ResultBrowser browser={browser} onCuePointerDown={onCuePointerDown} />
         ) : (
           <p className="media-empty" role="status">{loading ? t('Scanning media folders…')
             : atRoot ? t(sources.length ? 'No source folders match your search.' : 'Add a folder to browse your media, or open a file.')

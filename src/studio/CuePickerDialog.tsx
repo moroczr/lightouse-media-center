@@ -3,9 +3,10 @@ import { BookOpen, FolderPlus, LibraryBig, Type } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { copyLibraryTextSlide, mediaCue, type Item, type Project, type Theme } from '../shared/model'
 import { Dialog } from './Editors'
-import { MediaBrowser, type MediaFilter, type MediaView } from './MediaBrowser'
-import { ScriptureEditor, type ScriptureView } from './ScriptureEditor'
-import { TextSlideLibrary, type TextLibraryView } from './TextSlideLibrary'
+import { MediaBrowser, type MediaFilter } from './MediaBrowser'
+import { ScriptureEditor } from './ScriptureEditor'
+import { TextSlideLibrary } from './TextSlideLibrary'
+import type { ViewMode } from './ViewModeSwitch'
 import { defineTabs, TabList } from './TabList'
 
 const tabs = defineTabs('cue-picker', [
@@ -33,9 +34,9 @@ export function CuePickerDialog({
 }) {
   const { t } = useLanguage()
   const [filter, setFilter] = useState<MediaFilter>('all')
-  const [mediaView, setMediaView] = useState<MediaView>('list')
-  const [scriptureView, setScriptureView] = useState<ScriptureView>('list')
-  const [textView, setTextView] = useState<TextLibraryView>('list')
+  const [mediaView, setMediaView] = useState<ViewMode>('list')
+  const [scriptureView, setScriptureView] = useState<ViewMode>('list')
+  const [textView, setTextView] = useState<ViewMode>('list')
 
   useEffect(() => {
     tabs.focus(tab)

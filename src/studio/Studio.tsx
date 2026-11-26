@@ -21,12 +21,13 @@ import { CueList, ItemIcon } from './CueList'
 import { CuePickerDialog, type CuePickerTab } from './CuePickerDialog'
 import { Dialog, NameEditor, TextEditor } from './Editors'
 import { KioskBackgroundEditor } from './KioskBackgroundEditor'
-import { ScriptureEditor, type ScriptureView } from './ScriptureEditor'
-import { MediaBrowser, type MediaFilter, type MediaView } from './MediaBrowser'
-import { TextSlideLibrary, type TextLibraryView } from './TextSlideLibrary'
+import { ScriptureEditor, type ScriptureLookup } from './ScriptureEditor'
+import { MediaBrowser, type MediaFilter } from './MediaBrowser'
+import { TextSlideLibrary, type LibrarySlideSelection } from './TextSlideLibrary'
 import { Preview } from './Preview'
 import { SettingsDialog } from './Settings'
 import { useCueDrag, type CueDropTarget } from './useCueDrag'
+import type { ViewMode } from './ViewModeSwitch'
 import { defineTabs, TabList } from './TabList'
 
 type Editor =
@@ -154,17 +155,18 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
   const [editor, setEditor] = useState<Editor | null>(null)
   const [tab, setTab] = useState<WorkspaceTab>('cues')
   const [mediaSelection, setMediaSelection] = useState<MediaFile>()
+  const scriptureLookup = useRef<ScriptureLookup>(null)
   const [versePreview, setVersePreview] = useState<AudienceScriptureCue>()
-  const [slideSelection, setSlideSelection] = useState<LibraryTextSlide>()
+  const [slideSelection, setSlideSelection] = useState<LibrarySlideSelection>()
   const [destinations, setDestinations] = useState<Partial<Record<ToolTab, string>>>({})
   const [scriptureEdit, setScriptureEdit] = useState<ScriptureCue>()
   const [bibleSettingsRevision, setBibleSettingsRevision] = useState(0)
   const [textPanel, setTextPanel] = useState<TextPanel>({ kind: 'library' })
   const [libraryLocation, setLibraryLocation] = useState<{ revision: number; folder?: string; selectedId?: string }>({ revision: 0 })
   const [mediaFilter, setMediaFilter] = useState<MediaFilter>('all')
-  const [scriptureView, setScriptureView] = useState<ScriptureView>('list')
-  const [mediaView, setMediaView] = useState<MediaView>('list')
-  const [textLibraryView, setTextLibraryView] = useState<TextLibraryView>('list')
+  const [scriptureView, setScriptureView] = useState<ViewMode>('list')
+  const [mediaView, setMediaView] = useState<ViewMode>('list')
+  const [textLibraryView, setTextLibraryView] = useState<ViewMode>('list')
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
   const [transmitting, setTransmitting] = useState(false)
@@ -180,7 +182,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
   const index = sequence.findIndex(item => item.id === cueId)
   const queued = sequence[index]
   const mediaPreview = useMemo(() => mediaSelection && mediaCue(mediaSelection), [mediaSelection])
-  const slidePreview = useMemo(() => slideSelection && textSlideCues(slideSelection.slide)[0], [slideSelection])
+  const slidePreview = useMemo(() => slideSelection && textSlideCues(slideSelection.item.slide)[slideSelection.index], [slideSelection])
   const browserPreview = tab === 'media' ? mediaPreview
     : tab === 'scripture' && !scriptureEdit ? versePreview
     : tab === 'text' && textPanel.kind === 'library' ? slidePreview : undefined
@@ -342,7 +344,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
   }
 
   async function send(item: Cue, mode: 'advance' | 'keep-queue', textCues: TextCue[] = []) {
-    if (transmittingRef.current) return
+    if (transmittingRef.current) return false
     transmittingRef.current = true
     setTransmitting(true)
     try {
@@ -354,8 +356,10 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
         setCueId(current => current === item.id ? sequence[currentIndex + 1]?.id ?? null : current)
       }
       if (!kiosk) tell('Cue staged. Launch Kiosk to present it.')
+      return true
     } catch (reason) {
       tell(errorText(reason), true)
+      return false
     } finally {
       transmittingRef.current = false
       setTransmitting(false)
@@ -375,9 +379,9 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
     }
   }
 
-  function sendTextSlide(slide: TextSlide) {
-    const cues = textSlideCues(slide)
-    if (cues.length) void send(cues[0], 'keep-queue', cues)
+  function sendLibrarySlide({ item, index }: LibrarySlideSelection) {
+    const cues = textSlideCues(copyLibraryTextSlide(item))
+    if (cues[index]) void send(cues[index], 'keep-queue', cues)
   }
 
   function showAdjacentTextSlide(direction: -1 | 1) {
@@ -388,8 +392,12 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
 
   function goLive() {
     if (!upcoming || !next) return
+    if (browserPreview?.kind === 'scripture') {
+      scriptureLookup.current?.presentSelection()
+      return
+    }
     if (browserPreview?.kind === 'text' && slideSelection) {
-      sendTextSlide(copyLibraryTextSlide(slideSelection))
+      sendLibrarySlide(slideSelection)
       return
     }
     void send(upcoming, browserPreview ? 'keep-queue' : 'advance')
@@ -859,9 +867,9 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
                   </>
                 )}
                 <div className="scripture-lookup" hidden={!!scriptureEdit}>
-                  <ScriptureEditor active={tab === 'scripture' && !scriptureEdit} settingsRevision={bibleSettingsRevision} busy={transmitting}
+                  <ScriptureEditor ref={scriptureLookup} active={tab === 'scripture' && !scriptureEdit} settingsRevision={bibleSettingsRevision} busy={transmitting}
                     view={scriptureView} onViewChange={setScriptureView}
-                    onPreview={setVersePreview} onLive={cue => void send(cue, 'keep-queue')}
+                    onPreview={setVersePreview} onLive={cue => send(cue, 'keep-queue')}
                     onCuePointerDown={drag.start} />
                 </div>
               </section>
@@ -885,7 +893,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
                       onDelete: item => setEditor({ kind: 'delete-saved-slide', item }),
                       onPreview: setSlideSelection,
                       onCuePointerDown: drag.start,
-                      onLive: item => sendTextSlide(copyLibraryTextSlide(item)),
+                      onLive: sendLibrarySlide,
                     }} />
                 </div>
                 {(textPanel.kind === 'new-library' || textPanel.kind === 'rename-library') && (

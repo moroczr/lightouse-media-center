@@ -276,6 +276,8 @@ const hungarian = {
   'Remove “{name}” and its slides?': 'Eltávolítod ezt a diáival együtt: „{name}”?',
   'Remove “{name}” and its cues?': 'Eltávolítod ezt a műsorelemeivel együtt: „{name}”?',
   'Cancel': 'Mégse',
+  'Search these slides': 'Keresés ezekben a diákban',
+  'No slides in this set.': 'Nincsenek diák ebben a sorozatban.',
   'Search saved text slides': 'Mentett szöveges diák keresése',
   'Search this library': 'Keresés ebben a könyvtárban',
   'Search all libraries': 'Keresés az összes könyvtárban',
