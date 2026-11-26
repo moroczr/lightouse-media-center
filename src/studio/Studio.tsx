@@ -779,7 +779,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
           <div className="main-inner">
             <Preview
               stage={stage} standby={standby} background={background?.url} next={next}
-              nextError={resolved?.error ?? ''} browsing={!!browserPreview}
+              nextError={resolved?.error ?? ''}
               kiosk={kiosk} busy={transmitting}
               dropTarget={drag.preview?.target ?? null} browserDrag={!!drag.preview && !('cueId' in drag.preview.item)}
               onBlackout={toggleBlackout}

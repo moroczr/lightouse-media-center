@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Ban, ChevronLeft, ChevronRight, Monitor, Pause, Play, RotateCcw, RotateCw, Square, Volume2, VolumeX } from 'lucide-react'
+import { Ban, ChevronLeft, ChevronRight, Pause, Play, RotateCcw, RotateCw, Square, Volume2, VolumeX } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError } from '../shared/messages'
 import { Audience } from '../shared/Audience'
@@ -14,7 +14,6 @@ interface PreviewProps {
   background?: string
   next: AudienceCue | null
   nextError: string
-  browsing: boolean
   kiosk: boolean
   busy: boolean
   dropTarget: CueDropTarget | null
@@ -165,6 +164,11 @@ function KioskVolume({ stage, onAction }: {
           onBlur={() => setDraft(null)}
         />
       </div>
+      <label className="media-fade">
+        <input type="checkbox" checked={stage.fade}
+          onChange={event => onAction({ kind: 'fade', enabled: event.currentTarget.checked })} />
+        {t('Fade')}
+      </label>
       <button
         className={`icon-button${stage.muted ? ' media-mute-active' : ''}`}
         aria-label={t('Mute Kiosk audio')}
@@ -181,31 +185,23 @@ function KioskVolume({ stage, onAction }: {
 export function Preview(props: PreviewProps) {
   const { t } = useLanguage()
   const { stage } = props
-  const live = props.kiosk && !!stage.cue && !stage.blackout
   const media = isMedia(stage.cue)
   const audience = stage.cue ?? (props.background ? null : props.standby)
   const { textNavigation } = props
-  const status = stage.blackout ? 'Blackout' : live ? 'Live' : stage.cue ? 'Staged' : 'Standby'
 
   return (
     <div className="preview-grid">
       <section className="preview-panel preview-panel--live" aria-labelledby="live-heading">
-        <header className="preview-heading">
-          <h2 id="live-heading"><Monitor size={15} /> {t('Live output')}</h2>
-          <span className={`status-pill${live ? ' status-pill--live' : ''}`}><span />{t(status)}</span>
-        </header>
         <CueDropScreen target={props.busy ? undefined : 'live'} active={props.dropTarget === 'live'} prompt={t('Drop to go live')}>
+          <h2 id="live-heading" className="preview-label">{t('Live')}</h2>
           <Audience key={stage.revision} cue={audience} background={props.background} stage={props.kiosk ? stage : { ...stage, playing: false }} />
           <button type="button" className="button preview-blackout" aria-label={t('Blackout')} aria-pressed={stage.blackout}
             onClick={props.onBlackout} aria-keyshortcuts="Control+Shift+B" title={t('Toggle blackout (Ctrl+Shift+B)')}><Ban size={16} aria-hidden="true" /><span>{t('Blackout')}</span></button>
         </CueDropScreen>
       </section>
       <section className="preview-panel preview-panel--next" aria-labelledby="next-heading">
-        <header className="preview-heading">
-          <h2 id="next-heading"><ChevronRight size={17} /> {t('Next up')}</h2>
-          {props.next && <span className="status-pill status-pill--next">{t(props.browsing ? 'Preview' : 'Queued')}</span>}
-        </header>
         <CueDropScreen target="next" active={props.dropTarget === 'next'} prompt={t(props.browserDrag ? 'Drop to preview' : 'Drop to queue')}>
+          <h2 id="next-heading" className="preview-label">{t('Preview')}</h2>
           <Audience key={props.next?.id ?? 'empty'} cue={props.next} />
           {props.nextError && <div className="slide-empty slide-overlay" role="status">{translateError(t, props.nextError)}</div>}
         </CueDropScreen>

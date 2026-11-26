@@ -201,6 +201,7 @@ export function present(cue: AudienceCue | null, expectedRevision?: number): Pro
     blackout: browserStage.blackout,
     volume: browserStage.volume,
     muted: browserStage.muted,
+    fade: browserStage.fade,
     revision: browserStage.revision + 1,
     playing: isMedia(cue),
   }
@@ -217,7 +218,7 @@ export async function setBlackout(blackout: boolean) {
 
 export async function controlPlayback(revision: number, action: PlaybackAction) {
   if (desktop) return invoke<Stage>('control_playback', { revision, action })
-  const changesOutput = action.kind === 'volume' || action.kind === 'mute'
+  const changesOutput = action.kind === 'volume' || action.kind === 'mute' || action.kind === 'fade'
   if (!changesOutput && (browserStage.revision !== revision || !isMedia(browserStage.cue))) return browserStage
   if ((action.kind === 'seek' || action.kind === 'skip') && browserStage.duration <= 0) return browserStage
   const next = { ...browserStage }
@@ -246,6 +247,9 @@ export async function controlPlayback(revision: number, action: PlaybackAction) 
       break
     case 'mute':
       next.muted = action.muted
+      break
+    case 'fade':
+      next.fade = action.enabled
       break
   }
   if (!changesOutput) next.playbackRevision++

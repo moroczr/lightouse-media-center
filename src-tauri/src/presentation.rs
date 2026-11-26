@@ -70,6 +70,7 @@ pub struct Stage {
     duration: f64,
     volume: f64,
     muted: bool,
+    fade: bool,
     error: Option<String>,
 }
 
@@ -86,6 +87,7 @@ impl Default for Stage {
             duration: 0.0,
             volume: 1.0,
             muted: false,
+            fade: false,
             error: None,
         }
     }
@@ -107,6 +109,7 @@ pub enum PlaybackAction {
     Skip { seconds: f64 },
     Volume { volume: f64 },
     Mute { muted: bool },
+    Fade { enabled: bool },
 }
 
 #[derive(Deserialize)]
@@ -421,6 +424,7 @@ pub fn present(
             blackout: stage.blackout,
             volume: stage.volume,
             muted: stage.muted,
+            fade: stage.fade,
             ..Stage::default()
         };
         true
@@ -458,6 +462,10 @@ pub fn control_playback(
             }
             PlaybackAction::Mute { muted } => {
                 stage.muted = muted;
+                return true;
+            }
+            PlaybackAction::Fade { enabled } => {
+                stage.fade = enabled;
                 return true;
             }
             _ if stage.revision != revision || !stage.cue.as_ref().is_some_and(Cue::is_media) => {

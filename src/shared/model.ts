@@ -144,6 +144,7 @@ export type PlaybackAction =
   | { kind: 'skip'; seconds: number }
   | { kind: 'volume'; volume: number }
   | { kind: 'mute'; muted: boolean }
+  | { kind: 'fade'; enabled: boolean }
 
 export interface Stage {
   revision: number
@@ -156,6 +157,7 @@ export interface Stage {
   position: number
   volume: number
   muted: boolean
+  fade: boolean
   error: string | null
 }
 
@@ -170,6 +172,7 @@ export const emptyStage: Stage = {
   position: 0,
   volume: 1,
   muted: false,
+  fade: false,
   error: null,
 }
 

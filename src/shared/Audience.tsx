@@ -65,9 +65,27 @@ interface AudienceProps {
   output?: boolean
 }
 
+const fadeDuration = 1000
+
+function fadeGain(from: number, to: number, apply: (value: number) => void, finish: () => void) {
+  const start = performance.now()
+  const duration = fadeDuration * Math.abs(to - from)
+  const timer = window.setInterval(() => {
+    const progress = Math.min((performance.now() - start) / duration, 1)
+    apply(progress === 1 ? to : from + (to - from) * progress)
+    if (progress === 1) {
+      window.clearInterval(timer)
+      finish()
+    }
+  }, 20)
+  return () => window.clearInterval(timer)
+}
+
 export function Audience({ cue, stage, background, output = false }: AudienceProps) {
   const { t } = useLanguage()
   const media = useRef<HTMLMediaElement | null>(null)
+  const gain = useRef(0)
+  const outputVolume = useRef(1)
   const lastReport = useRef(0)
   const initialized = useRef(false)
   const appliedSeek = useRef<number | undefined>(undefined)
@@ -79,6 +97,7 @@ export function Audience({ cue, stage, background, output = false }: AudiencePro
   const blackout = stage?.blackout ?? false
   const muted = stage?.muted ?? false
   const volume = stage?.volume ?? 1
+  const fade = output && (stage?.fade ?? false)
   const shouldPlay = playing && (output || !blackout)
   const position = stage?.position ?? 0
   const [previewError, setPreviewError] = useState(false)
@@ -111,28 +130,66 @@ export function Audience({ cue, stage, background, output = false }: AudiencePro
   }
 
   useLayoutEffect(() => {
-    if (output && media.current) media.current.volume = volume
+    outputVolume.current = volume
+    if (output && media.current) media.current.volume = volume * gain.current
   }, [output, volume])
 
   useEffect(() => {
     const element = media.current
     if (!element) return
-    appliedPlayback.current = playbackRevision
-    synchronizePosition(element)
-    if (!shouldPlay) {
+    let active = true
+    let cancelFade: (() => void) | undefined
+    const target = shouldPlay && !muted ? 1 : 0
+    const from = gain.current
+    const ramp = fade && outputVolume.current > 0 && from !== target && (shouldPlay || !element.paused)
+
+    function applyGain(value: number) {
+      if (!element || !output) return
+      gain.current = value
+      element.volume = outputVolume.current * value
+      element.muted = muted && value === 0
+    }
+
+    function applyTransport() {
+      if (!element) return
+      appliedPlayback.current = playbackRevision
+      synchronizePosition(element)
+    }
+
+    function finish() {
+      if (!element || shouldPlay) return
+      // Delay both pausing and the stop command's rewind until the audio is silent.
+      applyTransport()
       element.pause()
       report(element)
-      return
     }
-    if (!element.paused) return
-    let active = true
-    void element.play().catch(error => {
-      if (active && error.name !== 'AbortError') {
-        report(element, 'Playback could not start. Try Play or check the file format.')
+
+    function startFade() {
+      if (active && ramp) cancelFade = fadeGain(from, target, applyGain, finish)
+    }
+
+    applyGain(ramp ? from : target)
+    if (!shouldPlay) {
+      if (ramp) startFade()
+      else finish()
+    } else {
+      applyTransport()
+      if (element.paused || (ramp && element.readyState < HTMLMediaElement.HAVE_FUTURE_DATA)) {
+        // A fade-in begins once the media is actually playing, including after buffering.
+        void element.play().then(startFade).catch(error => {
+          if (active && error.name !== 'AbortError') {
+            report(element, 'Playback could not start. Try Play or check the file format.')
+          }
+        })
+      } else {
+        startFade()
       }
-    })
-    return () => { active = false }
-  }, [shouldPlay, playbackRevision])
+    }
+    return () => {
+      active = false
+      cancelFade?.()
+    }
+  }, [shouldPlay, playbackRevision, output, muted, fade])
 
   useEffect(() => {
     const element = media.current
@@ -176,12 +233,12 @@ export function Audience({ cue, stage, background, output = false }: AudiencePro
       {cue && !isMedia(cue) && <SlideText cue={cue} />}
       {cue?.kind === 'video' && (
         <>
-          <video {...mediaProps} src={cue.url} muted={!output || muted} playsInline />
+          <video {...mediaProps} src={cue.url} muted={!output} playsInline />
           {previewError && !output && <div className="slide-empty slide-overlay"><Video size={24} /><span>{t('Preview unavailable')}</span></div>}
         </>
       )}
       {cue?.kind === 'audio' && (output
-        ? <audio {...mediaProps} src={cue.url} muted={muted} />
+        ? <audio {...mediaProps} src={cue.url} />
         : <div className="slide-empty"><Music2 size={26} /><span>{cue.title}</span></div>)}
       {blackout && <div className="slide-blackout">{backgroundImage}</div>}
     </div>

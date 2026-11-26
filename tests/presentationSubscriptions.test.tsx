@@ -130,3 +130,100 @@ it('keeps a background removal received while the saved image is loading', async
   await act(async () => snapshot.resolve({ name: 'Old image', url: '/old.png' }))
   expect(container.querySelector('.audience-background')).toBeNull()
 })
+
+it('fades Kiosk audio for mute and transport while preserving the selected volume', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'performance'] })
+  const playing = new WeakSet<HTMLMediaElement>()
+  vi.spyOn(HTMLMediaElement.prototype, 'paused', 'get').mockImplementation(function (this: HTMLMediaElement) {
+    return !playing.has(this)
+  })
+  vi.spyOn(HTMLMediaElement.prototype, 'readyState', 'get').mockReturnValue(4)
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(async function (this: HTMLMediaElement) {
+    playing.add(this)
+  })
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(function (this: HTMLMediaElement) {
+    playing.delete(this)
+  })
+  const click = async (label: string) => {
+    const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!
+    expect(button.disabled).toBe(false)
+    await act(async () => button.click())
+  }
+  const tick = async (ms: number) => { await act(async () => vi.advanceTimersByTime(ms)) }
+
+  try {
+    await bridge.controlPlayback(0, { kind: 'volume', volume: 0.6 })
+    await bridge.present({ id: 'song', kind: 'audio', title: 'Song', url: '/song.mp3' })
+    await render(<><Studio /><Kiosk /></>)
+    const audio = container.querySelector('audio')!
+    const fade = container.querySelector<HTMLInputElement>('.media-fade input')!
+    const slider = container.querySelector<HTMLInputElement>('input[aria-label="Kiosk volume"]')!
+    expect(audio.volume).toBe(0.6)
+    expect(fade.checked).toBe(false)
+
+    await click('Mute Kiosk audio')
+    expect(audio.muted).toBe(true)
+    await click('Mute Kiosk audio')
+    expect(audio.muted).toBe(false)
+    await act(async () => fade.click())
+    expect((await bridge.getStage()).fade).toBe(true)
+
+    await click('Mute Kiosk audio')
+    expect(audio.volume).toBe(0.6)
+    await tick(500)
+    expect(audio.volume).toBeCloseTo(0.3)
+    expect(audio.muted).toBe(false)
+    const volumeDuringMute = audio.volume
+    await click('Mute Kiosk audio')
+    expect(audio.volume).toBe(volumeDuringMute)
+    await tick(1000)
+    expect(audio.volume).toBe(0.6)
+
+    await click('Mute Kiosk audio')
+    await tick(1000)
+    expect(audio.volume).toBe(0)
+    expect(audio.muted).toBe(true)
+    expect(slider.value).toBe('60')
+    await click('Mute Kiosk audio')
+    await tick(500)
+    expect(audio.volume).toBeCloseTo(0.3)
+    await tick(500)
+    expect(audio.volume).toBe(0.6)
+
+    audio.currentTime = 12
+    await click('Pause media')
+    await tick(500)
+    expect(audio.paused).toBe(false)
+    expect(audio.volume).toBeCloseTo(0.3)
+    await tick(500)
+    expect(audio.paused).toBe(true)
+    expect(audio.currentTime).toBe(12)
+
+    await click('Play media')
+    expect(audio.paused).toBe(false)
+    expect(audio.volume).toBe(0)
+    await tick(1000)
+    expect(audio.volume).toBe(0.6)
+
+    await click('Stop media')
+    await tick(500)
+    expect(audio.paused).toBe(false)
+    expect(audio.currentTime).toBe(12)
+    await tick(500)
+    expect(audio.paused).toBe(true)
+    expect(audio.currentTime).toBe(0)
+    expect(audio.volume).toBe(0)
+
+    await act(async () => { await bridge.present(null) })
+    expect((await bridge.getStage()).fade).toBe(true)
+    expect(slider.value).toBe('60')
+  } finally {
+    await act(async () => {
+      await bridge.present(null)
+      await bridge.controlPlayback(0, { kind: 'fade', enabled: false })
+      await bridge.controlPlayback(0, { kind: 'mute', muted: false })
+      await bridge.controlPlayback(0, { kind: 'volume', volume: 1 })
+    })
+    vi.useRealTimers()
+  }
+})
