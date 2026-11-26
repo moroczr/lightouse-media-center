@@ -1,37 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Monitor, Music2, Video } from 'lucide-react'
 import { useLanguage } from './i18n'
-import { getStage, listenStage, reportPlayback } from './bridge'
+import { reportPlayback } from './bridge'
 import { useSlideThemes } from './SlideThemes'
-import { emptyStage, isBuiltInTheme, isMedia, type AudienceCue, type Stage } from './model'
-
-export function useStage(initial: Stage = emptyStage) {
-  const [stage, setStage] = useState(initial)
-
-  useEffect(() => {
-    let active = true
-    let cleanup: (() => void) | undefined
-    let receivedUpdate = false
-    void listenStage(updated => {
-      receivedUpdate = true
-      if (active) setStage(updated)
-    }).then(unlisten => {
-      if (!active) {
-        unlisten()
-        return
-      }
-      cleanup = unlisten
-      void getStage().then(current => {
-        if (active && !receivedUpdate) setStage(current)
-      })
-    })
-    return () => {
-      active = false
-      cleanup?.()
-    }
-  }, [])
-  return stage
-}
+import { isBuiltInTheme, isMedia, type AudienceCue, type Stage } from './model'
 
 function SlideText({ cue }: { cue: Extract<AudienceCue, { text: string }> }) {
   const { settings } = useSlideThemes()

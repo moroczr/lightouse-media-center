@@ -5,8 +5,7 @@ import {
 } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError } from '../shared/messages'
-import { useStage } from '../shared/Audience'
-import { useKioskBackground } from '../shared/KioskBackground'
+import { useKioskBackground, useStage } from '../shared/presentationSubscriptions'
 import { useSlideThemes } from '../shared/SlideThemes'
 import {
   closeKiosk, desktop, displays, isKioskOpen, listenKioskClosed, loadProject, openKiosk, pickFolder,
@@ -146,7 +145,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
   const [kiosk, setKiosk] = useState(false)
   const [displayBusy, setDisplayBusy] = useState(false)
   const [expanded, setExpanded] = useState(() => new Set(['worship']))
-  const stage = useStage()
+  const { stage, error: stageSyncError } = useStage()
   const [liveTextCues, setLiveTextCues] = useState<TextCue[]>([])
   const { settings: themeSettings, error: themeError, reload: reloadThemes } = useSlideThemes()
   const [savingTextTheme, setSavingTextTheme] = useState(false)
@@ -789,7 +788,12 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
               onPlayback={action => void updateStage(controlPlayback(stage.revision, action))}
             />
 
-            {(saveError || stage.error) && <div className="problem" role="alert"><CircleAlert size={17} /> {translateError(t, saveError || stage.error || '')}</div>}
+            {[
+              translateError(t, saveError || stage.error || ''),
+              stageSyncError && t('Could not sync live output: {detail}', { detail: translateError(t, stageSyncError) }),
+            ].map((problem, index) => problem && (
+              <div key={index} className="problem" role="alert"><CircleAlert size={17} /> {problem}</div>
+            ))}
 
             <div className="cue-workspace">
               <div className="workspace-bar">

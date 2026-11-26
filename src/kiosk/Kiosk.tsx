@@ -1,10 +1,10 @@
 import { useEffect } from 'react'
-import { Audience, useStage } from '../shared/Audience'
+import { Audience } from '../shared/Audience'
 import { closeKiosk, desktop } from '../shared/bridge'
-import { useKioskBackground } from '../shared/KioskBackground'
+import { useKioskBackground, useStage } from '../shared/presentationSubscriptions'
 
 export default function Kiosk() {
-  const stage = useStage()
+  const { stage } = useStage()
   const { background } = useKioskBackground()
 
   useEffect(() => {

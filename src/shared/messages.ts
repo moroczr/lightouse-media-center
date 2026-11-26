@@ -199,6 +199,7 @@ const hungarian = {
   'Some nearby verses could not be loaded.': 'Néhány környező verset nem sikerült betölteni.',
   'Add Media': 'Média hozzáadása',
   'Bible lookup': 'Igekeresés',
+  'Could not sync live output: {detail}': 'Nem sikerült szinkronizálni az élő kimenetet: {detail}',
   'Could not open the workspace: {detail}': 'Nem sikerült megnyitni a munkaterületet: {detail}',
   'Could not save changes: {detail}': 'Nem sikerült menteni a változtatásokat: {detail}',
   'Kiosk display disconnected. Choose a display to reopen it.': 'Megszakadt a kapcsolat a vetítő kijelzőjével. A vetítő újraindításához válassz kijelzőt.',
