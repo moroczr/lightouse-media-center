@@ -106,7 +106,7 @@ export function TextSlideLibrary({
   }
 
   const browser = useResultBrowser({
-    grid: mosaic, disabled: busy, selectedIndex,
+    active, grid: mosaic, disabled: busy, selectedIndex,
     items: rows.map((row): BrowserItem => {
       const common = { key: row.key, select: () => setSelection(row.key) }
       if (row.kind === 'folder') return {
@@ -154,7 +154,7 @@ export function TextSlideLibrary({
             ref={element => {
               searchInput.current = element
               if (element) element.autofocus = true
-            }} onChange={event => setQuery(event.target.value)} />
+            }} onKeyDown={browser.onSearchKeyDown} onChange={event => setQuery(event.target.value)} />
         </label>
         {actions.kind === 'browse' && !opened && (libraries.includes(folder) ? (
           <button type="button" className="button button-primary" onClick={() => actions.onCreate(folder)}>

@@ -34,6 +34,10 @@ export function navigateResultList(
     if (index === last && (key === 'ArrowDown' || key === 'ArrowRight')) return onBoundary(1)
   }
 
+  focusResult(list, index)
+}
+
+export function focusResult(list: HTMLUListElement, index: number) {
   const button = list.children[index]?.querySelector<HTMLButtonElement>('[data-result-button]')
   button?.focus({ preventScroll: true })
   button?.scrollIntoView({ block: 'nearest', inline: 'nearest' })

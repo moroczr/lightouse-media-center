@@ -841,7 +841,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
               </section>
 
               <section {...workspaceTabs.panelProps('media', tab)} className="tool-panel" tabIndex={0}>
-                <MediaBrowser sources={project.sources} filter={mediaFilter} onFilterChange={setMediaFilter}
+                <MediaBrowser active={tab === 'media'} sources={project.sources} filter={mediaFilter} onFilterChange={setMediaFilter}
                   view={mediaView} onViewChange={setMediaView} onAddFolder={addSource} busy={transmitting}
                   onPreview={setMediaSelection} onLive={file => void send(mediaCue(file), 'keep-queue')}
                   onCuePointerDown={drag.start} />

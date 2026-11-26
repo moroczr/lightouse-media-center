@@ -1,10 +1,10 @@
-import { useRef, type KeyboardEvent, type PointerEvent, type ReactNode, type Ref } from 'react'
+import { useLayoutEffect, useRef, type KeyboardEvent, type PointerEvent, type ReactNode, type Ref } from 'react'
 import { ChevronRight } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import type { ItemKind } from '../shared/model'
 import { SendToKioskButton } from './Editors'
 import type { CueDragStart } from './useCueDrag'
-import { navigateResultList } from './resultNavigation'
+import { focusResult, navigateResultList } from './resultNavigation'
 
 export type BrowserItem = {
   key: string
@@ -27,15 +27,55 @@ type BrowserOptions = {
   selectedIndex: number
   grid: boolean
   disabled: boolean
+  active: boolean
+  loading?: boolean
   onBoundary?: (direction: -1 | 1) => void
 }
 
-// Attach onKeyDown to the panel so its search field can navigate the same results.
 export function useResultBrowser(options: BrowserOptions) {
+  const { items, selectedIndex, grid, disabled, active, loading, onBoundary } = options
   const listRef = useRef<HTMLUListElement>(null)
+  const pendingFocus = useRef<HTMLInputElement>(null)
+  const enteringTab = useRef(false)
+
+  useLayoutEffect(() => {
+    if (active) return
+    enteringTab.current = true
+    pendingFocus.current = null
+  }, [active])
+
+  function onResultFocus(index: number) {
+    enteringTab.current = false
+    if (index !== selectedIndex) items[index].select()
+  }
+
+  function cancelPendingFocus() {
+    pendingFocus.current = null
+  }
+
+  // Honor Down Arrow once the current search has rendered any results.
+  useLayoutEffect(() => {
+    const input = pendingFocus.current
+    if (!input || (loading && !items.length)) return
+    pendingFocus.current = null
+    if (input !== document.activeElement || input.closest('[hidden]') || !listRef.current) return
+    focusResult(listRef.current, enteringTab.current ? 0 : Math.max(0, selectedIndex))
+  }, [items.length, loading, selectedIndex])
+
+  function onSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.defaultPrevented || event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    if (event.key === 'ArrowDown' && loading && !items.length) {
+      event.preventDefault()
+      pendingFocus.current = event.currentTarget
+      return
+    }
+    // On tab entry, start at the edge of the results even when a previous selection is still visible.
+    navigateResultList(event, listRef.current, enteringTab.current ? -1 : selectedIndex, grid)
+  }
+
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (event.defaultPrevented || event.nativeEvent.isComposing || event.altKey || event.metaKey || event.shiftKey) return
-    const { items, selectedIndex, grid, disabled, onBoundary } = options
     const target = event.target
     if (!(target instanceof HTMLElement)) return
     const inList = listRef.current?.contains(target)
@@ -51,11 +91,12 @@ export function useResultBrowser(options: BrowserOptions) {
       if (!action) return
       event.preventDefault()
       if (!disabled && !event.repeat) action()
-    } else if (!disabled && (inList || inSearch)) {
+    } else if (inList) {
       navigateResultList(event, listRef.current, selectedIndex, grid, onBoundary)
     }
   }
-  return { ...options, listRef, onKeyDown }
+
+  return { ...options, listRef, onKeyDown, onSearchKeyDown, onResultFocus, cancelPendingFocus }
 }
 
 const layouts = {
@@ -93,9 +134,9 @@ export function ResultBrowser({ browser, variant = 'catalog', className = '', la
         const text = <><strong>{item.label}</strong>{item.description && <span>{item.description}</span>}</>
         return (
           <li key={item.key} className={thumbnail ? 'text-library-row' : live ? 'result-with-send' : undefined}
-            onFocus={() => { if (!selected) item.select() }}>
+            onFocus={() => browser.onResultFocus(index)}>
             {grid && item.thumbnail && <div className="text-library-thumbnail" aria-hidden="true">{item.thumbnail}</div>}
-            <button type="button" data-result-button="" className={layout.button + (startDrag ? ' cue-draggable' : '')}
+            <button type="button" data-result-button="" data-selected={selected ? '' : undefined} className={layout.button + (startDrag ? ' cue-draggable' : '')}
               title={item.title} tabIndex={index === Math.max(0, selectedIndex) ? 0 : -1}
               ref={selected ? selectedRef : undefined} aria-pressed={item.open ? undefined : selected}
               aria-keyshortcuts={live && !disabled ? 'Space Control+Enter' : undefined}

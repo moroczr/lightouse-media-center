@@ -62,7 +62,7 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
   const theme = chosenTheme ?? existing?.theme ?? slideSettings?.defaultThemes.scripture ?? builtInSlideDefaults.scripture
   const themeReady = !!(chosenTheme || existing || slideSettings || themeError)
   const [location, setLocation] = useState<BibleLocation>()
-  const [folderIndex, setFolderIndex] = useState(0)
+  const [folderIndex, setFolderIndex] = useState(-1)
   const [draft, setDraft] = useState<Draft>()
   const [byText, setByText] = useState(false)
   const [query, setQuery] = useState('')
@@ -81,8 +81,6 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
   const inputRef = useRef<HTMLInputElement>(null)
   const moveCaret = useRef(false)
   const remainingLetters = useRef<string[]>([])
-  const breadcrumb = useRef<HTMLElement>(null)
-  const focusCrumb = useRef(false)
   const selectedRow = useRef<HTMLButtonElement>(null)
   const focusSelectedRow = useRef(false)
 
@@ -160,8 +158,9 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
   }), [existing?.id, theme, translation])
 
   const browser = useResultBrowser({
-    grid: mosaic, selectedIndex: selected ? selectedIndex : Math.min(folderIndex, folders.length - 1),
+    active, grid: mosaic, selectedIndex: selected ? selectedIndex : Math.min(folderIndex, folders.length - 1),
     disabled: busy || (!!selected && !themeReady),
+    loading: loadingSettings || !!(translation && !books) || !!(chapterKey && !verses) || !!(textKey && !result),
     onBoundary: byReference ? direction => moveVerse(direction, true) : undefined,
     items: selected ? visible.map((verse): BrowserItem => ({
       key: verseLabel(verse), label: verseLabel(verse), description: verse.text, kind: 'scripture',
@@ -270,12 +269,6 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
   }, [activeSuggestion])
 
   useLayoutEffect(() => {
-    if (!focusCrumb.current) return
-    breadcrumb.current?.querySelector<HTMLElement>('[aria-current="location"]')?.focus({ preventScroll: true })
-    focusCrumb.current = false
-  }, [location])
-
-  useLayoutEffect(() => {
     const list = verseResults.current
     const row = selectedRow.current
     if (!active || !list || !row) return
@@ -294,6 +287,7 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
   }, [active, selected, currentWindow, mosaic, verseResults])
 
   function removeSegment(offset: number) {
+    browser.cancelPendingFocus()
     remainingLetters.current = []
     moveCaret.current = true
     setDraft({ text: deleteReferenceSegment(text, offset), auto: false })
@@ -363,7 +357,7 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
       setActiveIndex(-1)
     } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       const direction = event.key === 'ArrowDown' ? 1 : -1
-      if (!finished && options.length) {
+      if (!selected && !finished && options.length) {
         event.preventDefault()
         setDismissed(false)
         setActiveIndex(index => index < 0
@@ -375,10 +369,11 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
 
   function openFolder(next?: BibleLocation) {
     if (location?.bookId === next?.bookId && location?.chapter === next?.chapter) return
-    focusCrumb.current = true
-    setFolderIndex(0)
+    browser.cancelPendingFocus()
+    setFolderIndex(-1)
     setDirectMatch(undefined)
     setLocation(next)
+    inputRef.current?.focus({ preventScroll: true })
   }
 
   function clearSearch(textMode = byText) {
@@ -426,13 +421,14 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
       setDraft({ ...draft, location: { book: book.id, suffix } })
     }
     remainingLetters.current = []
-    setFolderIndex(0)
+    setFolderIndex(-1)
     setTranslation(next)
     setActiveIndex(-1)
     setDismissed(false)
   }
 
   function changeMode(next: boolean) {
+    browser.cancelPendingFocus()
     setByText(next)
     setActiveIndex(-1)
     setDismissed(false)
@@ -452,10 +448,12 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
       event.preventDefault()
       return
     }
-    if (!byText) referenceKeys(event)
+    browser.onSearchKeyDown(event)
+    if (!byText && !event.defaultPrevented) referenceKeys(event)
   }
 
   function changeSearch(event: ChangeEvent<HTMLInputElement>) {
+    browser.cancelPendingFocus()
     // Virtual keyboards can insert a character without sending a matching keydown.
     const input = event.nativeEvent as InputEvent
     if (!input.isComposing && input.inputType === 'insertText' && applyModeShortcut(input.data)) return
@@ -523,7 +521,7 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
               }}
               disabled={!loadingSettings && !translation} autoComplete="off" spellCheck={false} maxLength={byText ? 200 : 80}
               value={byText ? query : text} placeholder={byText ? t('e.g. love your enemies') : t('e.g. {book} 2:24', { book: referenceExample })}
-              onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); setActiveIndex(-1) }}
+              onFocus={() => setFocused(true)} onBlur={() => { browser.cancelPendingFocus(); setFocused(false); setActiveIndex(-1) }}
               onChange={changeSearch} onKeyDown={searchKeys} />
             {filtering && <button type="button" className="icon-button scripture-clear" aria-label={t('Clear search')}
               title={t('Clear search')} onClick={() => clearSearch()}><X size={15} aria-hidden="true" /></button>}
@@ -560,20 +558,20 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
         </div>
       </div>
       <div className="scripture-options">
-        {!filtering && <nav className="text-library-path" aria-label={t('Bible books')} ref={breadcrumb}>
+        {!filtering && <nav className="text-library-path" aria-label={t('Bible books')}>
           {openBook
             ? <button type="button" className="button button-quiet" onClick={() => openFolder()}>{t('Bible books')}</button>
-            : <span aria-current="location" tabIndex={-1}>{t('Bible books')}</span>}
+            : <span aria-current="location">{t('Bible books')}</span>}
           {openBook && <>
             <ChevronRight size={14} aria-hidden="true" />
             {openChapter === undefined
-              ? <span aria-current="location" tabIndex={-1}>{openBook.name}</span>
+              ? <span aria-current="location">{openBook.name}</span>
               : <button type="button" className="button button-quiet" title={openBook.name}
                 onClick={() => openFolder({ bookId: openBook.id })}>{openBook.name}</button>}
           </>}
           {openChapter !== undefined && <>
             <ChevronRight size={14} aria-hidden="true" />
-            <span aria-current="location" tabIndex={-1}>{openChapterLabel}</span>
+            <span aria-current="location">{openChapterLabel}</span>
           </>}
         </nav>}
         <div className="scripture-options-controls">

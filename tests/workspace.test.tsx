@@ -347,9 +347,13 @@ it.each(['Space', 'Go live'])('opens the passage after presenting a Bible text m
   await editSearch(input, 'match')
   const list = (label: string) => panel.querySelector(`ul[aria-label="${label}"]`)
   const rows = () => Array.from(panel.querySelectorAll<HTMLButtonElement>('.verse-result'))
+  expect(document.activeElement).toBe(input)
+  expect(await press(input, 'ArrowDown')).toBe(true)
   await act(async () => { await vi.waitFor(() => expect(search).toHaveBeenCalledWith('test', 'match')) })
   expect(rows()).toHaveLength(2)
-  await act(async () => rows()[1].click())
+  expect(document.activeElement).toBe(rows()[0])
+  expect(await press(document.activeElement!, 'ArrowDown')).toBe(true)
+  expect(document.activeElement).toBe(rows()[1])
   expect(list('Matching verses')).toBeTruthy()
   expect(container.querySelector('.preview-panel--next .slide-text')?.textContent).toBe('Last match')
   expect((await bridge.getStage()).cue).toBeNull()
@@ -376,15 +380,20 @@ it.each(['Space', 'Go live'])('opens the passage after presenting a Bible text m
   expect(list('Matching verses')).toBeTruthy()
 })
 
-it.each(['workspace', 'cue-picker'])('enters results from each search tab without clicking a row in the %s', async scope => {
+it.each(['workspace', 'cue-picker'])('highlights the selection and starts at the first result when returning to a tab in the %s', async scope => {
   await bridge.present(null)
   HTMLElement.prototype.scrollIntoView ??= () => {}
-  vi.spyOn(bridge, 'listMedia').mockResolvedValue([{ kind: 'audio', name: 'Theme', path: '/audio/theme.mp3' }])
+  vi.spyOn(bridge, 'listMedia').mockResolvedValue([
+    { kind: 'audio', name: 'Morning', path: '/audio/morning.mp3' },
+    { kind: 'audio', name: 'Theme', path: '/audio/theme.mp3' },
+  ])
   vi.spyOn(bridge.bible, 'settings').mockResolvedValue({
     defaultId: 'test', databases: [{ id: 'test', name: 'Test', enabled: true, fileName: null }],
   })
-  vi.spyOn(bridge.bible, 'books').mockResolvedValue([{ id: 'GEN', name: 'Genesis', chapters: 1 }])
-  await bridge.saveProject({ ...saved, slideLibraries: ['Songs'] })
+  vi.spyOn(bridge.bible, 'books').mockResolvedValue([
+    { id: 'GEN', name: 'Genesis', chapters: 1 }, { id: 'EXO', name: 'Exodus', chapters: 1 },
+  ])
+  await bridge.saveProject({ ...saved, slideLibraries: ['Songs', 'Readings'] })
   await openStudio()
   if (scope === 'cue-picker') await openDialog('Add cue')
   for (const id of ['media', 'scripture', 'text']) {
@@ -393,9 +402,23 @@ it.each(['workspace', 'cue-picker'])('enters results from each search tab withou
     await act(async () => tab.click())
     const input = panel.querySelector<HTMLInputElement>('.search-box input')!
     expect(document.activeElement).toBe(input)
-    expect(await press(document.activeElement!, 'ArrowDown')).toBe(true)
-    expect(document.activeElement).toBe(panel.querySelector('[data-result-button]'))
+    const [first, second] = panel.querySelectorAll('[data-result-button]')
+    expect(await press(input, 'ArrowDown')).toBe(true)
+    expect(document.activeElement).toBe(first)
+    expect(first.hasAttribute('data-selected')).toBe(true)
+    expect(await press(first, 'ArrowDown')).toBe(true)
+    expect(document.activeElement).toBe(second)
+    expect(second.hasAttribute('data-selected')).toBe(true)
+    expect(first.hasAttribute('data-selected')).toBe(false)
+
+    const other = id === 'media' ? 'text' : 'media'
+    await act(async () => document.getElementById(`${scope}-tab-${other}`)!.click())
     await act(async () => tab.click())
     expect(document.activeElement).toBe(input)
+    expect(second.hasAttribute('data-selected')).toBe(true)
+    expect(await press(input, 'ArrowDown')).toBe(true)
+    expect(document.activeElement).toBe(first)
+    expect(first.hasAttribute('data-selected')).toBe(true)
+    expect(second.hasAttribute('data-selected')).toBe(false)
   }
 })

@@ -168,7 +168,9 @@ it('moves focus from a completed Bible reference to the previewed verse and send
     defaultId: 'test', databases: [{ id: 'test', name: 'Test', enabled: true, fileName: null }],
   })
   vi.spyOn(bridge.bible, 'books').mockResolvedValue([book])
-  vi.spyOn(bridge.bible, 'verses').mockResolvedValue([{ verse: 1, text: 'First' }, { verse: 2, text: 'Second' }])
+  vi.spyOn(bridge.bible, 'verses').mockResolvedValue(
+    Array.from({ length: 14 }, (_, i) => ({ verse: i + 1, text: `Verse ${i + 1}` })),
+  )
   const preview = vi.fn()
   const live = vi.fn()
   await render(<ScriptureEditor active settingsRevision={0} busy={false}
@@ -179,6 +181,7 @@ it('moves focus from a completed Bible reference to the previewed verse and send
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Genesis 1:1')
     input.dispatchEvent(new Event('input', { bubbles: true }))
   })
+  expect(input.getAttribute('aria-expanded')).toBe('true')
   expect(await press(' ')).toBe(false)
   expect(await press('ArrowDown')).toBe(true)
   expect(document.activeElement?.textContent).toContain('Genesis 1:1')
@@ -208,7 +211,14 @@ it.each(['list', 'grid'] as const)('browses books and chapters before presenting
     await act(async () => { button.dispatchEvent(new MouseEvent(type, { detail, bubbles: true })) })
   }
 
+  const input = container.querySelector<HTMLInputElement>('.search-box input')!
+  await act(async () => input.focus())
+  expect(await press('ArrowDown')).toBe(true)
+  expect(document.activeElement).toBe(rows('Bible books')[0])
   await click(rows('Bible books')[0], 1)
+  expect(document.activeElement).toBe(input)
+  expect(await press('ArrowDown')).toBe(true)
+  expect(document.activeElement).toBe(rows('Chapters')[0])
   await click(rows('Chapters')[0], 2)
   expect(rows('Chapters')).toHaveLength(2)
   await act(async () => rows('Chapters')[0].focus())
@@ -219,6 +229,9 @@ it.each(['list', 'grid'] as const)('browses books and chapters before presenting
   await press(view === 'grid' ? 'ArrowRight' : 'ArrowDown')
   expect(document.activeElement).toBe(rows('Chapters')[1])
   await click(rows('Chapters')[1], 1)
+  expect(document.activeElement).toBe(input)
+  expect(await press('ArrowDown')).toBe(true)
+  expect(document.activeElement).toBe(rows('Verses')[0])
   await click(rows('Verses')[0], 2)
   await click(rows('Verses')[0], 2, 'dblclick')
   expect(live).not.toHaveBeenCalled()
@@ -251,10 +264,10 @@ it('uses the selected media row for drag preview and live actions and disables s
 
   await render(panel(true))
   const busyRow = container.querySelector<HTMLButtonElement>('.media-result')!
-  await act(async () => {
-    busyRow.focus()
-    busyRow.dispatchEvent(new Event('pointerdown', { bubbles: true }))
-  })
+  await act(async () => container.querySelector<HTMLInputElement>('input[type="search"]')!.focus())
+  expect(await press('ArrowDown')).toBe(true)
+  expect(document.activeElement).toBe(busyRow)
+  await act(async () => { busyRow.dispatchEvent(new Event('pointerdown', { bubbles: true })) })
   await press(' ')
   expect(startDrag).toHaveBeenCalledTimes(1)
   expect(live).toHaveBeenCalledTimes(1)
@@ -380,3 +393,33 @@ it('searches all media libraries from the root and only the current subtree insi
   expect(await press('ArrowDown')).toBe(false)
   expect(document.activeElement).toBe(search)
 })
+
+it.each(['keep the query', 'edit the query', 'move focus'])(
+  'handles Down Arrow during a Media scan when operators %s',
+  async action => {
+    let finishScan!: (files: MediaFile[]) => void
+    vi.spyOn(bridge, 'listMedia').mockImplementation(() => new Promise(resolve => { finishScan = resolve }))
+    await render(<MediaBrowser sources={[source]} filter="all" onFilterChange={vi.fn()}
+      view="list" onViewChange={vi.fn()} busy={false} onLive={vi.fn()} />)
+    const input = container.querySelector<HTMLInputElement>('input[type="search"]')!
+    async function type(value: string) {
+      await act(async () => {
+        input.focus()
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await type('morn')
+    expect(await press('ArrowDown')).toBe(true)
+    expect(document.activeElement).toBe(input)
+    const otherButton = container.querySelector<HTMLButtonElement>('.media-segment button')!
+    if (action === 'edit the query') await type('morning')
+    if (action === 'move focus') await act(async () => otherButton.focus())
+
+    await act(async () => finishScan([file]))
+    const row = container.querySelector('[data-result-button]')
+    expect(row?.textContent).toContain(file.name)
+    const expected = action === 'keep the query' ? row : action === 'move focus' ? otherButton : input
+    expect(document.activeElement).toBe(expected)
+  },
+)

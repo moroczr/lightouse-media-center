@@ -29,13 +29,14 @@ function fileLocation(file: MediaFile, source: Source) {
   return [source.name, ...folders].join(' / ')
 }
 
-export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChange, onAddFolder, busy, onSave, onPreview, onLive, onCuePointerDown }: {
+export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChange, onAddFolder, active = true, busy, onSave, onPreview, onLive, onCuePointerDown }: {
   sources: Source[];
   filter: MediaFilter;
   onFilterChange: (filter: MediaFilter) => void;
   view: ViewMode;
   onViewChange: (view: ViewMode) => void;
   onAddFolder?: () => Promise<void>;
+  active?: boolean;
   busy: boolean;
   onSave?: (file: MediaFile) => void;
   onPreview?: (file: MediaFile | undefined) => void;
@@ -123,7 +124,7 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
   }
 
   const browser = useResultBrowser({
-    selectedIndex, grid, disabled: busy || picking,
+    selectedIndex, grid, loading, active, disabled: busy || picking,
     items: shown.map((item): BrowserItem => {
       const common = { key: item.path, label: item.name, select: () => setSelectedPath(item.path) }
       if (!('kind' in item)) return {
@@ -142,6 +143,7 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
   })
 
   function openLocation(next?: MediaLocation) {
+    browser.cancelPendingFocus()
     setLocation(next)
     setSelectedPath(next?.kind === 'file' ? next.file.path : undefined)
     setQuery('')
@@ -175,7 +177,8 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
             if (input) input.autofocus = true
           }} aria-label={t('Search media')} value={query}
             placeholder={t(atRoot ? 'Search all libraries' : source ? 'Search this folder' : 'Search files and folders')}
-            onChange={event => setQuery(event.target.value)} />
+            onKeyDown={browser.onSearchKeyDown} onBlur={browser.cancelPendingFocus}
+            onChange={event => { browser.cancelPendingFocus(); setQuery(event.target.value) }} />
         </label>
         {onAddFolder && <div className="media-tools">
           <button className="button" disabled={picking} onClick={() => void pick('file')}><FolderOpen size={16} /> {t('Open file')}</button>

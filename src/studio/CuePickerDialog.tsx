@@ -47,7 +47,7 @@ export function CuePickerDialog({
       {destination && <p className="cue-picker-destination">{t('Adding to {name}', { name: destination })}</p>}
       <TabList tabs={tabs} selected={tab} onChange={onTabChange} label="Cue sources" focusSearch />
       <section {...tabs.panelProps('media', tab)}>
-        <MediaBrowser sources={project.sources} filter={filter} onFilterChange={setFilter} view={mediaView} onViewChange={setMediaView}
+        <MediaBrowser active={tab === 'media'} sources={project.sources} filter={filter} onFilterChange={setFilter} view={mediaView} onViewChange={setMediaView}
           busy={busy} onSave={file => onAdd(mediaCue(file))} />
       </section>
       <section {...tabs.panelProps('text', tab)}>
