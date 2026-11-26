@@ -39,13 +39,13 @@ export function CuePickerDialog({
   const [textView, setTextView] = useState<ViewMode>('list')
 
   useEffect(() => {
-    tabs.focus(tab)
+    tabs.focusInput(tab)
   }, [tab])
 
   return (
     <Dialog title={t('Add cue')} className="cue-picker-dialog" onClose={onClose}>
       {destination && <p className="cue-picker-destination">{t('Adding to {name}', { name: destination })}</p>}
-      <TabList tabs={tabs} selected={tab} onChange={onTabChange} label="Cue sources" />
+      <TabList tabs={tabs} selected={tab} onChange={onTabChange} label="Cue sources" focusSearch />
       <section {...tabs.panelProps('media', tab)}>
         <MediaBrowser sources={project.sources} filter={filter} onFilterChange={setFilter} view={mediaView} onViewChange={setMediaView}
           busy={busy} onSave={file => onAdd(mediaCue(file))} />

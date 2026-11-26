@@ -213,14 +213,8 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
       workspaceTabs.focus(nextTab)
       return
     }
-    // Allow an open menu or cue chooser to finish closing before moving focus.
-    window.requestAnimationFrame(() => {
-      const panel = document.getElementById(workspaceTabs.panelId(nextTab))
-      const input = Array.from(panel?.querySelectorAll<HTMLElement>('[autofocus]') ?? [])
-        .find(element => !element.closest('[hidden]') && !element.matches(':disabled'))
-      if (input) input.focus()
-      else workspaceTabs.focus(nextTab)
-    })
+    // A change of tab focuses the input on commit. Reopening the same tool may also close a dialog.
+    if (nextTab === tab) window.requestAnimationFrame(() => workspaceTabs.focusInput(nextTab))
   }
 
   function showCueList() {
@@ -806,7 +800,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
             <div className="cue-workspace">
               <div className="workspace-bar">
                 <div className="workspace-bar-inner">
-                  <TabList tabs={workspaceTabs} selected={tab} onChange={setTab} label="Presentation workspace" workspace />
+                  <TabList tabs={workspaceTabs} selected={tab} onChange={setTab} label="Presentation workspace" workspace focusSearch />
                   <div className="cue-navigation" role="group" aria-label={t('Cue controls')}>
                     <button type="button" className="button" aria-label={t('Previous')}
                       disabled={index === 0 || !sequence.length} onClick={() => nudge(-1)}

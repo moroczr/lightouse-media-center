@@ -18,6 +18,11 @@ import type { CueDragStart } from './useCueDrag'
 
 const segmentLabels = { book: 'Bible books', chapter: 'Chapters', verse: 'Verses' } as const
 
+const searchModes = [
+  { label: 'Reference', shortcut: '@', byText: false },
+  { label: 'Verse text', shortcut: '/', byText: true },
+] as const
+
 type Draft = {
   text: string
   auto: boolean
@@ -364,7 +369,7 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
         setActiveIndex(index => index < 0
           ? (direction === 1 ? 0 : options.length - 1)
           : (index + direction + options.length) % options.length)
-      } else navigateFromVerseInput(event)
+      }
     }
   }
 
@@ -376,15 +381,13 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
     setLocation(next)
   }
 
-  function clearSearch() {
-    if (byText) setQuery('')
+  function clearSearch(textMode = byText) {
+    if (textMode) setQuery('')
     else {
       remainingLetters.current = []
       setDraft({ text: '', auto: false })
-      setDismissed(false)
-      setActiveIndex(-1)
     }
-    inputRef.current?.focus()
+    changeMode(textMode)
   }
 
   function selectVerse(verse: PassageVerse) {
@@ -417,14 +420,6 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
     })
   }
 
-  function navigateFromVerseInput(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return
-    if (selected && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
-      event.preventDefault()
-      moveVerse(event.key === 'ArrowUp' ? -1 : 1, !!onLive)
-    }
-  }
-
   function changeTranslation(next: string) {
     if (draft && book && segment !== 'book') {
       const suffix = verseText === undefined ? chapterText : `${chapterText}:${verseText}`
@@ -442,6 +437,30 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
     setActiveIndex(-1)
     setDismissed(false)
     inputRef.current?.focus()
+  }
+
+  function applyModeShortcut(character: string | null) {
+    const mode = searchModes.find(mode => mode.shortcut === character)
+    if (!mode) return false
+    clearSearch(mode.byText)
+    return true
+  }
+
+  function searchKeys(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.nativeEvent.isComposing) return
+    if (!event.metaKey && (!event.ctrlKey || event.getModifierState('AltGraph')) && applyModeShortcut(event.key)) {
+      event.preventDefault()
+      return
+    }
+    if (!byText) referenceKeys(event)
+  }
+
+  function changeSearch(event: ChangeEvent<HTMLInputElement>) {
+    // Virtual keyboards can insert a character without sending a matching keydown.
+    const input = event.nativeEvent as InputEvent
+    if (!input.isComposing && input.inputType === 'insertText' && applyModeShortcut(input.data)) return
+    if (byText) setQuery(event.target.value)
+    else changeReference(event)
   }
 
   async function presentVerse(verse: PassageVerse) {
@@ -505,10 +524,9 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
               disabled={!loadingSettings && !translation} autoComplete="off" spellCheck={false} maxLength={byText ? 200 : 80}
               value={byText ? query : text} placeholder={byText ? t('e.g. love your enemies') : t('e.g. {book} 2:24', { book: referenceExample })}
               onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); setActiveIndex(-1) }}
-              onChange={byText ? event => setQuery(event.target.value) : changeReference}
-              onKeyDown={byText ? navigateFromVerseInput : referenceKeys} />
+              onChange={changeSearch} onKeyDown={searchKeys} />
             {filtering && <button type="button" className="icon-button scripture-clear" aria-label={t('Clear search')}
-              title={t('Clear search')} onClick={clearSearch}><X size={15} aria-hidden="true" /></button>}
+              title={t('Clear search')} onClick={() => clearSearch()}><X size={15} aria-hidden="true" /></button>}
           </div>
           {suggestionsOpen && (
             <ul id={listId} className="scripture-suggestions" role="listbox" aria-label={t(segmentLabels[segment])}>
@@ -523,8 +541,12 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
           )}
         </div>
         <div className="scripture-modes" role="group" aria-label={t('Search by')}>
-          <button type="button" className="button button-quiet" aria-pressed={!byText} onClick={() => changeMode(false)}>{t('Reference')}</button>
-          <button type="button" className="button button-quiet" aria-pressed={byText} onClick={() => changeMode(true)}>{t('Verse text')}</button>
+          {searchModes.map(mode => (
+            <button key={mode.label} type="button" className="button button-quiet" aria-pressed={byText === mode.byText}
+              aria-keyshortcuts={mode.shortcut} onClick={() => changeMode(mode.byText)}>
+              {t(mode.label)} <kbd className="cue-shortcut" aria-hidden="true">{mode.shortcut}</kbd>
+            </button>
+          ))}
         </div>
         <div className="scripture-translation">
           <select aria-label={t('Translation')} value={translation} disabled={!translations.length}

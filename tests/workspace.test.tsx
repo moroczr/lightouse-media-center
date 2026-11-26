@@ -145,6 +145,10 @@ it.each([
   { label: 'Settings sections', opener: 'Settings' },
   { label: 'Cue sources', opener: 'Add cue' },
 ])('supports keyboard navigation and linked panels in $label', async ({ label, opener }) => {
+  vi.spyOn(bridge.bible, 'settings').mockResolvedValue({
+    defaultId: 'test', databases: [{ id: 'test', name: 'Test', enabled: true, fileName: null }],
+  })
+  vi.spyOn(bridge.bible, 'books').mockResolvedValue([{ id: 'GEN', name: 'Genesis', chapters: 1 }])
   await openStudio()
   if (opener) await openDialog(opener)
   const list = container.querySelector<HTMLElement>(`[role="tablist"][aria-label="${label}"]`)!
@@ -152,8 +156,9 @@ it.each([
   const panels = tabs.map(tab => document.getElementById(tab.getAttribute('aria-controls')!)!)
   const last = tabs.length - 1
 
-  function expectSelected(index: number) {
-    expect(document.activeElement).toBe(tabs[index])
+  function expectSelected(index: number, fromTab = false) {
+    const search = opener !== 'Settings' && panels[index].querySelector('.search-box input:not(:disabled)')
+    expect(document.activeElement).toBe((!fromTab && search) || tabs[index])
     tabs.forEach((tab, i) => {
       expect(tab.getAttribute('aria-selected')).toBe(String(i === index))
       expect(tab.tabIndex).toBe(i === index ? 0 : -1)
@@ -164,16 +169,17 @@ it.each([
     })
   }
 
-  if (opener === 'Add cue') expect(document.activeElement).toBe(tabs[0])
+  if (opener === 'Add cue') expectSelected(0)
   tabs[0].focus()
-  expectSelected(0)
+  expectSelected(0, true)
   for (const modifier of ['ctrlKey', 'altKey', 'metaKey', 'shiftKey']) {
     expect(await press(tabs[0], 'ArrowLeft', { [modifier]: true })).toBe(false)
-    expectSelected(0)
+    expectSelected(0, true)
   }
   for (const [key, index] of [
     ['ArrowLeft', last], ['ArrowRight', 0], ['ArrowRight', 1], ['End', last], ['Home', 0],
   ] as const) {
+    await act(async () => list.querySelector<HTMLButtonElement>('[aria-selected="true"]')!.focus())
     expect(await press(document.activeElement!, key)).toBe(true)
     expectSelected(index)
   }
@@ -335,7 +341,7 @@ it.each(['Space', 'Go live'])('opens the passage after presenting a Bible text m
   await openStudio()
   await act(async () => button('Bible lookup').click())
   const panel = container.querySelector<HTMLElement>('#workspace-panel-scripture')!
-  const mode = Array.from(panel.querySelectorAll('button')).find(el => el.textContent === 'Verse text')!
+  const mode = panel.querySelector<HTMLButtonElement>('.scripture-modes button[aria-keyshortcuts="/"]')!
   await act(async () => mode.click())
   const input = panel.querySelector<HTMLInputElement>('.search-box input')!
   await editSearch(input, 'match')
@@ -368,4 +374,28 @@ it.each(['Space', 'Go live'])('opens the passage after presenting a Bible text m
   await act(async () => mode.click())
   expect(input.value).toBe('match')
   expect(list('Matching verses')).toBeTruthy()
+})
+
+it.each(['workspace', 'cue-picker'])('enters results from each search tab without clicking a row in the %s', async scope => {
+  await bridge.present(null)
+  HTMLElement.prototype.scrollIntoView ??= () => {}
+  vi.spyOn(bridge, 'listMedia').mockResolvedValue([{ kind: 'audio', name: 'Theme', path: '/audio/theme.mp3' }])
+  vi.spyOn(bridge.bible, 'settings').mockResolvedValue({
+    defaultId: 'test', databases: [{ id: 'test', name: 'Test', enabled: true, fileName: null }],
+  })
+  vi.spyOn(bridge.bible, 'books').mockResolvedValue([{ id: 'GEN', name: 'Genesis', chapters: 1 }])
+  await bridge.saveProject({ ...saved, slideLibraries: ['Songs'] })
+  await openStudio()
+  if (scope === 'cue-picker') await openDialog('Add cue')
+  for (const id of ['media', 'scripture', 'text']) {
+    const tab = document.getElementById(`${scope}-tab-${id}`)!
+    const panel = document.getElementById(tab.getAttribute('aria-controls')!)!
+    await act(async () => tab.click())
+    const input = panel.querySelector<HTMLInputElement>('.search-box input')!
+    expect(document.activeElement).toBe(input)
+    expect(await press(document.activeElement!, 'ArrowDown')).toBe(true)
+    expect(document.activeElement).toBe(panel.querySelector('[data-result-button]'))
+    await act(async () => tab.click())
+    expect(document.activeElement).toBe(input)
+  }
 })

@@ -181,6 +181,8 @@ it('moves focus from a completed Bible reference to the previewed verse and send
   })
   expect(await press(' ')).toBe(false)
   expect(await press('ArrowDown')).toBe(true)
+  expect(document.activeElement?.textContent).toContain('Genesis 1:1')
+  expect(await press('ArrowDown')).toBe(true)
   expect(document.activeElement?.textContent).toContain('Genesis 1:2')
   expect(preview).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Genesis 1:2' }))
   expect(live).not.toHaveBeenCalled()
@@ -272,7 +274,7 @@ it('keeps a newer text search open when an earlier verse finishes going live', a
   const live = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve }))
   await render(<ScriptureEditor active settingsRevision={0} busy={false}
     view="list" onViewChange={vi.fn()} onLive={live} />)
-  const mode = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Verse text')!
+  const mode = container.querySelector<HTMLButtonElement>('.scripture-modes button[aria-keyshortcuts="/"]')!
   await act(async () => mode.click())
   const input = container.querySelector<HTMLInputElement>('.search-box input')!
   async function lookup(text: string) {
@@ -291,4 +293,90 @@ it('keeps a newer text search open when an earlier verse finishes going live', a
   expect(input.value).toBe('second')
   expect(container.querySelector('ul[aria-label="Matching verses"] strong')?.textContent).toBe('Genesis 1:2')
   expect(document.activeElement).toBe(input)
+})
+
+it('starts a fresh Bible search with either displayed shortcut, including in the current mode', async () => {
+  const book = { id: 'GEN', name: 'Genesis', chapters: 50 }
+  vi.spyOn(bridge.bible, 'settings').mockResolvedValue({
+    defaultId: 'test', databases: [{ id: 'test', name: 'Test', enabled: true, fileName: null }],
+  })
+  vi.spyOn(bridge.bible, 'books').mockResolvedValue([book])
+  await render(<ScriptureEditor active settingsRevision={0} busy={false} view="list" onViewChange={vi.fn()} />)
+  const input = container.querySelector<HTMLInputElement>('.search-box input')!
+  const mode = (key: string) => container.querySelector<HTMLButtonElement>(`.scripture-modes button[aria-keyshortcuts="${key}"]`)!
+  const edit = async (value: string, data: string, inputType = 'insertText') => {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, data, inputType }))
+    })
+  }
+  expect(mode('@').textContent).toContain('Reference @')
+  expect(mode('/').textContent).toContain('Verse text /')
+  await act(async () => input.focus())
+  await edit('Genesis 2:', 'Genesis 2:', 'insertFromPaste')
+  expect(await press('/')).toBe(true)
+  expect(mode('/').getAttribute('aria-pressed')).toBe('true')
+  expect(input.value).toBe('')
+  await edit('light', 'light')
+  expect(await press('@', { shiftKey: true })).toBe(true)
+  expect(mode('@').getAttribute('aria-pressed')).toBe('true')
+  expect(input.value).toBe('')
+  expect(document.activeElement).toBe(input)
+  await edit('Genesis 3:', 'Genesis 3:', 'insertFromPaste')
+  expect(await press('@')).toBe(true)
+  expect(input.value).toBe('')
+  expect(await press('/', { ctrlKey: true })).toBe(false)
+  expect(await press('/', { isComposing: true })).toBe(false)
+  expect(mode('@').getAttribute('aria-pressed')).toBe('true')
+  await edit('/', '/')
+  expect(mode('/').getAttribute('aria-pressed')).toBe('true')
+  expect(input.value).toBe('')
+  await edit('light', 'light')
+  expect(await press('/')).toBe(true)
+  expect(input.value).toBe('')
+  await edit('again', 'again')
+  await edit('again/', '/')
+  expect(input.value).toBe('')
+  await edit('light/shines', 'light/shines', 'insertFromPaste')
+  expect(input.value).toBe('light/shines')
+  expect(document.activeElement).toBe(input)
+})
+
+it('searches all media libraries from the root and only the current subtree inside a library', async () => {
+  const sources = [source, { id: 'video', name: 'Video', path: '/video' }]
+  const scan = vi.spyOn(bridge, 'listMedia').mockImplementation(async library => library.id === 'music'
+    ? [{ name: 'Morning song', kind: 'audio', path: '/music/Music/Services/Morning.mp3' }]
+    : [{ name: 'Morning film', kind: 'video', path: '/video/Video/Services/Morning.mp4' }])
+  const live = vi.fn()
+  await render(<MediaBrowser sources={sources} filter="all" onFilterChange={vi.fn()}
+    view="list" onViewChange={vi.fn()} busy={false} onLive={live} />)
+  const search = container.querySelector<HTMLInputElement>('input[type="search"]')!
+  const labels = () => Array.from(container.querySelectorAll('.media-result strong'), el => el.textContent)
+  async function type(value: string) {
+    await act(async () => {
+      search.focus()
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, value)
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  }
+  expect(labels()).toEqual(['Music', 'Video'])
+  expect(scan).not.toHaveBeenCalled()
+  await type('morning')
+  expect(labels()).toEqual(['Morning film', 'Morning song'])
+  await type('services')
+  expect(labels()).toEqual(['Morning film', 'Morning song'])
+  expect(scan).toHaveBeenCalledTimes(2)
+  expect(await press('ArrowDown')).toBe(true)
+  expect(document.activeElement?.textContent).toContain('Morning film')
+  expect(await press(' ')).toBe(true)
+  expect(live).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'Morning film' }))
+  await type('music')
+  expect(labels()).toEqual(['Music', 'Morning song'])
+  await act(async () => container.querySelector<HTMLButtonElement>('.media-result')!.click())
+  await type('morning')
+  expect(labels()).toEqual(['Morning song'])
+  await type('video')
+  expect(labels()).toEqual([])
+  expect(await press('ArrowDown')).toBe(false)
+  expect(document.activeElement).toBe(search)
 })
