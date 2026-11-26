@@ -97,14 +97,50 @@ function useResolvedCue(item: Exclude<Cue, TextCue> | undefined) {
   return resolved?.item === item ? resolved : undefined
 }
 
+type WorkspaceLoad =
+  | { status: 'loading' }
+  | { status: 'failed'; message: string }
+  | { status: 'ready'; saved: Project | null }
+
 export default function Studio() {
   const { t } = useLanguage()
-  const [project, setProject] = useState<Project>(starterProject)
-  const [loaded, setLoaded] = useState(false)
+  const [workspace, setWorkspace] = useState<WorkspaceLoad>({ status: 'loading' })
+  const loading = workspace.status === 'loading'
+
+  useEffect(() => {
+    if (!loading) return
+    let active = true
+    void loadProject().then(saved => {
+      if (active) setWorkspace({ status: 'ready', saved })
+    }).catch(reason => {
+      if (active) setWorkspace({ status: 'failed', message: errorText(reason) })
+    })
+    return () => { active = false }
+  }, [loading])
+
+  if (workspace.status === 'ready') return <StudioWorkspace saved={workspace.saved} />
+
+  return (
+    <main className="workspace-startup">
+      {workspace.status === 'failed' ? <>
+        <p role="alert">{t('Could not open the workspace: {detail}', { detail: translateError(t, workspace.message) })}</p>
+        <button type="button" className="button" onClick={() => setWorkspace({ status: 'loading' })}>{t('Retry')}</button>
+      </> : <p role="status">{t('Loading workspace…')}</p>}
+    </main>
+  )
+}
+
+function StudioWorkspace({ saved }: { saved: Project | null }) {
+  const { t } = useLanguage()
+  const [project, setProject] = useState<Project>(saved ?? starterProject)
   const [saveError, setSaveError] = useState('')
   const [persistedTextLibrary, setPersistedTextLibrary] = useState<LibraryTextSlide[]>()
   const [persistedSlideLibraries, setPersistedSlideLibraries] = useState<string[]>()
-  const [cueId, setCueId] = useState<string | null>(desktop ? welcomePreview.id : 'opening-scripture')
+  const active = project.playlists.find(list => list.id === project.activeId) ?? project.playlists[0]
+  const [cueId, setCueId] = useState<string | null>(() => {
+    if (!saved) return desktop ? welcomePreview.id : 'opening-scripture'
+    return flatten(active.children)[0]?.id ?? null
+  })
   const [displayList, setDisplayList] = useState<Display[]>([])
   const [kiosk, setKiosk] = useState(false)
   const [displayBusy, setDisplayBusy] = useState(false)
@@ -139,7 +175,6 @@ export default function Studio() {
   const displayOperation = useRef(0)
   const drag = useCueDrag(dropCue)
 
-  const active = project.playlists.find(list => list.id === project.activeId) ?? project.playlists[0]
   const currentCueId = stage.cue?.id
   const liveTextIndex = stage.cue?.kind === 'text' ? liveTextCues.findIndex(cue => cue.id === currentCueId) : -1
   const sequence = useMemo(() => flatten(active.children), [active])
@@ -218,30 +253,12 @@ export default function Studio() {
   }
 
   useEffect(() => {
-    let active = true
-    void loadProject().then(saved => {
-      if (!active) return
-      if (saved?.playlists.length) {
-        const root = saved.playlists.find(item => item.id === saved.activeId) ?? saved.playlists[0]
-        setProject(saved)
-        setCueId(flatten(root.children)[0]?.id ?? null)
-      }
-      setLoaded(true)
-    }).catch(reason => {
-      if (!active) return
-      setSaveError(`Could not open the workspace: ${errorText(reason)}`)
-    })
-    return () => { active = false }
-  }, [])
-
-  useEffect(() => {
-    if (!loaded) return
     saves.current = saves.current.then(() => saveProject(project)).then(() => {
       setPersistedTextLibrary(project.textLibrary)
       setPersistedSlideLibraries(project.slideLibraries)
       setSaveError('')
     }).catch(reason => setSaveError(`Could not save changes: ${errorText(reason)}`))
-  }, [project, loaded])
+  }, [project])
 
   useEffect(() => {
     if (!notice) return
@@ -412,7 +429,7 @@ export default function Studio() {
       ...cue,
       title: verseLabel(verse),
       reference: { translation: cue.reference.translation, book: verse.book.id, chapter: verse.chapter, verse: verse.verse },
-    }, verse.text)
+    }, verse)
     void updateStage(present(updated, stage.revision))
   }
 
@@ -534,7 +551,6 @@ export default function Studio() {
   }
 
   function createSlideLibrary(name: string) {
-    if (!loaded) return saveError || t('Wait for the workspace to finish loading.')
     const folder = normalizeTextSlideFolder(name)
     if (!folder) return t('Enter a library name.')
     if (project.slideLibraries.some(path => path.toLocaleLowerCase() === folder.toLocaleLowerCase())) {
@@ -689,7 +705,7 @@ export default function Studio() {
     : t('New one-off text slide')
 
   const sidebarAction = sidebarOpen ? t('Collapse sidebar') : t('Expand sidebar')
-  const savingLibrary = loaded && !saveError && (persistedTextLibrary !== project.textLibrary
+  const savingLibrary = !saveError && (persistedTextLibrary !== project.textLibrary
     || persistedSlideLibraries !== project.slideLibraries)
 
   return (

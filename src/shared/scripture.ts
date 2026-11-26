@@ -11,11 +11,6 @@ const abbreviations: Readonly<Record<string, string>> = {
   JAM: 'jas',
 }
 
-const editionLabels: Readonly<Record<string, string>> = {
-  H_Karoli_snc: 'Károli 1590',
-  H_rev_Karoli_KSZE: 'Károli KSZE 2011',
-}
-
 // The book must contain a letter so the leading number in "1 Peter" stays with the book.
 const referencePattern = /^((?:[1-5]\.?)?\s*\p{L}[\p{L}\p{M}\d\s.'’-]*?)\s*(\d+)(?:\s*:\s*(.*))?$/u
 
@@ -116,9 +111,8 @@ export function verseLabel({ book, chapter, verse }: ChapterPosition & Pick<Vers
   return `${book.name} ${chapter}:${verse}`
 }
 
-export function formatScriptureCue(cue: ScriptureCue, text: string): AudienceScriptureCue {
-  const edition = editionLabels[cue.reference.translation] ?? cue.reference.translation
-  return { ...cue, text, caption: `${cue.title} · ${edition}` }
+export function formatScriptureCue(cue: ScriptureCue, verse: PassageVerse): AudienceScriptureCue {
+  return { ...cue, text: verse.text, caption: verseLabel(verse) }
 }
 
 function adjacentChapter(books: readonly Book[], position: ChapterPosition, direction: -1 | 1): ChapterPosition | undefined {

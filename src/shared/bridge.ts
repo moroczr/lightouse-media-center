@@ -77,7 +77,8 @@ export async function loadProject(): Promise<Project | null> {
   const saved: SavedProject | null = desktop
     ? await invoke('load_project')
     : JSON.parse(localStorage.getItem(projectKey) ?? 'null')
-  if (!saved) return null
+  if (saved === null) return null
+  if (!Array.isArray(saved.playlists) || !saved.playlists.length) throw new Error('Invalid workspace format.')
   const project = normalizeProject(saved)
   if (!desktop) return project
 
@@ -423,10 +424,14 @@ export async function resolveCue(cue: Exclude<Cue, TextCue> | AudienceTextCue): 
   if (cue.kind === 'text') return cue
   if (cue.kind === 'scripture') {
     const { translation, book, chapter, verse } = cue.reference
-    const chapterVerses = await bible.verses(translation, book, chapter)
-    const text = chapterVerses.find(row => row.verse === verse)?.text
-    if (!text) throw new Error('This verse is unavailable in the selected translation.')
-    return formatScriptureCue(cue, text)
+    const [books, chapterVerses] = await Promise.all([
+      bible.books(translation),
+      bible.verses(translation, book, chapter),
+    ])
+    const matchedBook = books.find(entry => entry.id === book)
+    const matchedVerse = chapterVerses.find(row => row.verse === verse)
+    if (!matchedBook || !matchedVerse?.text) throw new Error('This verse is unavailable in the selected translation.')
+    return formatScriptureCue(cue, { ...matchedVerse, book: matchedBook, chapter })
   }
   return { ...base, kind: cue.kind, url: await mediaUrl(cue.path) }
 }

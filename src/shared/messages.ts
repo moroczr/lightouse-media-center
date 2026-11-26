@@ -205,7 +205,7 @@ const hungarian = {
   'This playlist group is empty.': 'Ez a beágyazott lista üres.',
   'Cue staged. Launch Kiosk to present it.': 'A műsorelem előkészítve. A megjelenítéshez indítsd el a vetítőt.',
   'The destination playlist is unavailable.': 'A célként megadott lejátszási lista nem érhető el.',
-  'Wait for the workspace to finish loading.': 'Várd meg, amíg a munkaterület betöltődik.',
+  'Loading workspace…': 'Munkaterület betöltése…',
   'Enter a library name.': 'Add meg a könyvtár nevét.',
   'A slide library with this name already exists.': 'Már létezik ilyen nevű diakönyvtár.',
   'This slide library is unavailable.': 'Ez a diakönyvtár nem érhető el.',

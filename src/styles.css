@@ -41,6 +41,7 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; }
+.workspace-startup { padding: 24px; }
 button, input, textarea, select, summary { font: inherit; }
 button, summary { -webkit-tap-highlight-color: transparent; }
 button, summary, select { cursor: pointer; }

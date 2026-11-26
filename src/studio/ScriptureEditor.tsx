@@ -158,7 +158,7 @@ export function ScriptureEditor({ existing, active, settingsRevision, busy, view
   }), [existing?.id, theme, translation])
 
   useEffect(() => {
-    onPreview?.(selected && themeReady ? formatScriptureCue(cueForVerse(selected), selected.text) : undefined)
+    onPreview?.(selected && themeReady ? formatScriptureCue(cueForVerse(selected), selected) : undefined)
   }, [onPreview, selected, themeReady, cueForVerse])
 
   useEffect(() => {
