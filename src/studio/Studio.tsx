@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   BookOpen, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, FolderOpen, FolderPlus, Image as ImageIcon, LibraryBig, ListMusic,
   Monitor, MonitorOff, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, RadioTower, Settings, Trash2, Type, X,
 } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
-import { translateError, type Message } from '../shared/messages'
+import { translateError } from '../shared/messages'
 import { useStage } from '../shared/Audience'
 import { useKioskBackground } from '../shared/KioskBackground'
 import { useSlideThemes } from '../shared/SlideThemes'
@@ -28,6 +28,7 @@ import { TextSlideLibrary, type TextLibraryView } from './TextSlideLibrary'
 import { Preview } from './Preview'
 import { SettingsDialog } from './Settings'
 import { useCueDrag, type CueDropTarget } from './useCueDrag'
+import { defineTabs, TabList } from './TabList'
 
 type Editor =
   | { kind: 'settings' }
@@ -55,12 +56,12 @@ const libraryActions = {
   text: { kind: 'text', shortcut: 'T' },
 } as const
 
-const workspaceTabs = [
+const workspaceTabs = defineTabs('workspace', [
   { id: 'cues', label: 'Cue List', icon: ListMusic },
-  { id: 'media', label: 'Media', icon: LibraryBig, shortcut: libraryActions.media.shortcut },
-  { id: 'scripture', label: 'Bible lookup', icon: BookOpen, shortcut: libraryActions.scripture.shortcut },
-  { id: 'text', label: 'Slides', icon: Type, shortcut: libraryActions.text.shortcut },
-] satisfies readonly { id: WorkspaceTab; label: Message; icon: typeof Type; shortcut?: string }[]
+  { id: 'media', label: 'Media', icon: LibraryBig, keyShortcut: `Control+${libraryActions.media.shortcut}` },
+  { id: 'scripture', label: 'Bible lookup', icon: BookOpen, keyShortcut: `Control+${libraryActions.scripture.shortcut}` },
+  { id: 'text', label: 'Slides', icon: Type, keyShortcut: `Control+${libraryActions.text.shortcut}` },
+])
 
 const libraryItems = Object.values(libraryActions)
 function errorText(reason: unknown) {
@@ -162,7 +163,6 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
   const [textPanel, setTextPanel] = useState<TextPanel>({ kind: 'library' })
   const [libraryLocation, setLibraryLocation] = useState<{ revision: number; folder?: string; selectedId?: string }>({ revision: 0 })
   const [mediaFilter, setMediaFilter] = useState<MediaFilter>('all')
-  const workspaceTabList = useRef<HTMLDivElement>(null)
   const [scriptureView, setScriptureView] = useState<ScriptureView>('list')
   const [mediaView, setMediaView] = useState<MediaView>('list')
   const [textLibraryView, setTextLibraryView] = useState<TextLibraryView>('list')
@@ -208,32 +208,18 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
 
   function activateTab(nextTab: WorkspaceTab, focusInput = false) {
     setTab(nextTab)
-    const focusTab = () => workspaceTabList.current?.querySelector<HTMLButtonElement>(`#workspace-tab-${nextTab}`)?.focus()
     if (!focusInput) {
-      focusTab()
+      workspaceTabs.focus(nextTab)
       return
     }
     // Allow an open menu or cue chooser to finish closing before moving focus.
     window.requestAnimationFrame(() => {
-      const panel = document.getElementById(`workspace-panel-${nextTab}`)
+      const panel = document.getElementById(workspaceTabs.panelId(nextTab))
       const input = Array.from(panel?.querySelectorAll<HTMLElement>('[autofocus]') ?? [])
         .find(element => !element.closest('[hidden]') && !element.matches(':disabled'))
       if (input) input.focus()
-      else focusTab()
+      else workspaceTabs.focus(nextTab)
     })
-  }
-
-  function navigateTabs(event: ReactKeyboardEvent<HTMLDivElement>) {
-    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-    const index = workspaceTabs.findIndex(item => item.id === tab)
-    const last = workspaceTabs.length - 1
-    const next = event.key === 'ArrowRight' ? (index + 1) % workspaceTabs.length
-      : event.key === 'ArrowLeft' ? (index + last) % workspaceTabs.length
-      : event.key === 'Home' ? 0
-      : event.key === 'End' ? last : undefined
-    if (next === undefined) return
-    event.preventDefault()
-    activateTab(workspaceTabs[next].id)
   }
 
   function showCueList() {
@@ -808,15 +794,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
             <div className="cue-workspace">
               <div className="workspace-bar">
                 <div className="workspace-bar-inner">
-                  <div className="workspace-tabs" role="tablist" aria-label={t('Presentation workspace')} ref={workspaceTabList} onKeyDown={navigateTabs}>
-                    {workspaceTabs.map(({ id, label, icon: Icon, shortcut }) => (
-                      <button key={id} type="button" role="tab" id={`workspace-tab-${id}`} aria-controls={`workspace-panel-${id}`}
-                        aria-selected={tab === id} tabIndex={tab === id ? 0 : -1}
-                        aria-keyshortcuts={shortcut ? `Control+${shortcut}` : undefined} onClick={() => activateTab(id)}>
-                        <Icon size={15} aria-hidden="true" /><span>{t(label)}</span>
-                      </button>
-                    ))}
-                  </div>
+                  <TabList tabs={workspaceTabs} selected={tab} onChange={setTab} label="Presentation workspace" workspace />
                   <div className="cue-navigation" role="group" aria-label={t('Cue controls')}>
                     <button type="button" className="button" aria-label={t('Previous')}
                       disabled={index === 0 || !sequence.length} onClick={() => nudge(-1)}
@@ -830,8 +808,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
                   </div>
                 </div>
               </div>
-              <section id="workspace-panel-cues" role="tabpanel" aria-labelledby="workspace-tab-cues" className="cue-panel"
-                tabIndex={0} hidden={tab !== 'cues'}>
+              <section {...workspaceTabs.panelProps('cues', tab)} className="cue-panel" tabIndex={0}>
                 <div className="cue-add">
                   <button type="button" className="icon-button" aria-label={t('Add cue')} title={t('Add cue')}
                     aria-haspopup="dialog" onClick={() => openCuePicker(active.id)}>
@@ -857,16 +834,14 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
                 </div>
               </section>
 
-              <section id="workspace-panel-media" role="tabpanel" aria-labelledby="workspace-tab-media" className="tool-panel"
-                tabIndex={0} hidden={tab !== 'media'}>
+              <section {...workspaceTabs.panelProps('media', tab)} className="tool-panel" tabIndex={0}>
                 <MediaBrowser sources={project.sources} filter={mediaFilter} onFilterChange={setMediaFilter}
                   view={mediaView} onViewChange={setMediaView} onAddFolder={addSource} busy={transmitting}
                   onPreview={setMediaSelection} onLive={file => void send(mediaCue(file), 'keep-queue')}
                   onCuePointerDown={drag.start} />
               </section>
 
-              <section id="workspace-panel-scripture" role="tabpanel" aria-labelledby="workspace-tab-scripture" className="tool-panel scripture-panel"
-                tabIndex={0} hidden={tab !== 'scripture'}>
+              <section {...workspaceTabs.panelProps('scripture', tab)} className="tool-panel scripture-panel" tabIndex={0}>
                 {scriptureEdit && (
                   <>
                     <div className="workspace-context">
@@ -887,8 +862,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
                 </div>
               </section>
 
-              <section id="workspace-panel-text" role="tabpanel" aria-labelledby="workspace-tab-text" className="tool-panel"
-                tabIndex={0} hidden={tab !== 'text'}>
+              <section {...workspaceTabs.panelProps('text', tab)} className="tool-panel" tabIndex={0}>
                 <div hidden={textPanel.kind !== 'library'}>
                   <TextSlideLibrary active={tab === 'text' && textPanel.kind === 'library'}
                     items={project.textLibrary} libraries={project.slideLibraries}

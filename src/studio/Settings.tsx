@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { BookOpen, Globe, Images, Plus } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError, type Language } from '../shared/messages'
@@ -6,23 +6,23 @@ import { bible } from '../shared/bridge'
 import type { BibleSettings } from '../shared/model'
 import { Dialog } from './Editors'
 import { SlidesSettings } from './SlidesSettings'
+import { defineTabs, TabList } from './TabList'
 
 function errorMessage(reason: unknown) {
   return reason instanceof Error ? reason.message : String(reason)
 }
 
-const tabs = [
+const tabs = defineTabs('settings', [
   { id: 'general', label: 'General', icon: Globe },
   { id: 'bible', label: 'Bible', icon: BookOpen },
   { id: 'slides', label: 'Slides', icon: Images },
-] as const
+])
 
-type Tab = (typeof tabs)[number]['id']
+type Tab = (typeof tabs.options)[number]['id']
 
 export function SettingsDialog({ onClose, onBibleChange }: { onClose: () => void; onBibleChange: () => void }) {
   const { language, setLanguage, t } = useLanguage()
   const [tab, setTab] = useState<Tab>('general')
-  const tabList = useRef<HTMLDivElement>(null)
   const [settings, setSettings] = useState<BibleSettings>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -63,31 +63,10 @@ export function SettingsDialog({ onClose, onBibleChange }: { onClose: () => void
     void update(() => bible.saveSettings({ defaultId, disabledIds }))
   }
 
-  function navigateTabs(event: KeyboardEvent<HTMLDivElement>) {
-    const index = tabs.findIndex(item => item.id === tab)
-    const last = tabs.length - 1
-    const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
-      : event.key === 'ArrowLeft' ? (index + last) % tabs.length
-      : event.key === 'Home' ? 0
-      : event.key === 'End' ? last : undefined
-    if (next === undefined) return
-    event.preventDefault()
-    setTab(tabs[next].id)
-    tabList.current?.querySelectorAll('button')[next]?.focus()
-  }
-
   return (
     <Dialog title={t('Settings')} onClose={() => { if (!busy) onClose() }}>
-      <div className="settings-tabs" role="tablist" aria-label={t('Settings sections')} ref={tabList}
-        onKeyDown={navigateTabs}>
-        {tabs.map(({ id, label, icon: Icon }) => (
-          <button key={id} type="button" id={`${id}-tab`} role="tab" aria-selected={tab === id}
-            aria-controls={`${id}-settings`} tabIndex={tab === id ? 0 : -1} onClick={() => setTab(id)}>
-            <Icon size={16} aria-hidden="true" /> {t(label)}
-          </button>
-        ))}
-      </div>
-      <section id="general-settings" role="tabpanel" aria-labelledby="general-tab" hidden={tab !== 'general'}>
+      <TabList tabs={tabs} selected={tab} onChange={setTab} label="Settings sections" />
+      <section {...tabs.panelProps('general', tab)}>
         <div className="editor">
           <label>
             {t('Language')}
@@ -98,7 +77,7 @@ export function SettingsDialog({ onClose, onBibleChange }: { onClose: () => void
           </label>
         </div>
       </section>
-      <section id="bible-settings" role="tabpanel" aria-labelledby="bible-tab" hidden={tab !== 'bible'}>
+      <section {...tabs.panelProps('bible', tab)}>
         <div className="editor bible-settings">
           <div className="bible-settings-heading">
             <h3>{t('Bible databases')}</h3>
@@ -135,7 +114,7 @@ export function SettingsDialog({ onClose, onBibleChange }: { onClose: () => void
           {error && <p className="settings-error" role="alert">{translateError(t, error)}</p>}
         </div>
       </section>
-      <section id="slides-settings" role="tabpanel" aria-labelledby="slides-tab" hidden={tab !== 'slides'}>
+      <section {...tabs.panelProps('slides', tab)}>
         <SlidesSettings busy={busy} onBusyChange={setBusy} />
       </section>
       <div className="dialog-actions settings-actions">

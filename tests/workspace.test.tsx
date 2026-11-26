@@ -117,3 +117,82 @@ it('saves two rapid edits in order while the first write is pending', async () =
   expect(save.mock.calls.map(([project]) => project.sources)).toEqual([[saved.sources[1]], []])
   expect(await bridge.loadProject()).toEqual({ ...saved, sources: [] })
 })
+
+async function press(target: EventTarget, key: string, modifiers: KeyboardEventInit = {}) {
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...modifiers })
+  await act(async () => { target.dispatchEvent(event) })
+  return event.defaultPrevented
+}
+
+it.each([
+  { label: 'Presentation workspace', opener: null },
+  { label: 'Settings sections', opener: 'Settings' },
+  { label: 'Cue sources', opener: 'Add cue' },
+])('supports keyboard navigation and linked panels in $label', async ({ label, opener }) => {
+  await openStudio()
+  if (opener) {
+    // jsdom does not implement native dialog open/close methods.
+    HTMLDialogElement.prototype.showModal ??= function () { this.open = true }
+    HTMLDialogElement.prototype.close ??= function () { this.open = false }
+    await act(async () => button(opener).click())
+  }
+  const list = container.querySelector<HTMLElement>(`[role="tablist"][aria-label="${label}"]`)!
+  const tabs = Array.from(list.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+  const panels = tabs.map(tab => document.getElementById(tab.getAttribute('aria-controls')!)!)
+  const last = tabs.length - 1
+
+  function expectSelected(index: number) {
+    expect(document.activeElement).toBe(tabs[index])
+    tabs.forEach((tab, i) => {
+      expect(tab.getAttribute('aria-selected')).toBe(String(i === index))
+      expect(tab.tabIndex).toBe(i === index ? 0 : -1)
+      expect(document.getElementById(tab.getAttribute('aria-controls')!)).toBe(panels[i])
+      expect(panels[i].getAttribute('role')).toBe('tabpanel')
+      expect(panels[i].getAttribute('aria-labelledby')).toBe(tab.id)
+      expect(panels[i].hidden).toBe(i !== index)
+    })
+  }
+
+  if (opener === 'Add cue') expect(document.activeElement).toBe(tabs[0])
+  tabs[0].focus()
+  expectSelected(0)
+  for (const modifier of ['ctrlKey', 'altKey', 'metaKey', 'shiftKey']) {
+    expect(await press(tabs[0], 'ArrowLeft', { [modifier]: true })).toBe(false)
+    expectSelected(0)
+  }
+  for (const [key, index] of [
+    ['ArrowLeft', last], ['ArrowRight', 0], ['ArrowRight', 1], ['End', last], ['Home', 0],
+  ] as const) {
+    expect(await press(document.activeElement!, key)).toBe(true)
+    expectSelected(index)
+  }
+  await act(async () => tabs[1].click())
+  expectSelected(1)
+  if (opener === 'Add cue') {
+    expect(await press(tabs[1], 'b', { ctrlKey: true })).toBe(true)
+    expectSelected(2)
+  }
+})
+
+it('focuses the Media search field from the Studio shortcut and preserves it across tab changes', async () => {
+  await openStudio()
+  const mediaTab = container.querySelector<HTMLButtonElement>('[role="tab"][aria-keyshortcuts="Control+M"]')!
+  const panel = document.getElementById(mediaTab.getAttribute('aria-controls')!)!
+  const search = panel.querySelector<HTMLInputElement>('input[type="search"]')!
+
+  expect(await press(window, 'm', { ctrlKey: true })).toBe(true)
+  await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()))
+  expect(panel.hidden).toBe(false)
+  expect(document.activeElement).toBe(search)
+  await act(async () => {
+    // Use the native setter to simulate editing a React-controlled input.
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'morning')
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await press(mediaTab, 'Home')
+  expect(panel.hidden).toBe(true)
+  await act(async () => mediaTab.click())
+  expect(panel.hidden).toBe(false)
+  expect(panel.querySelector('input[type="search"]')).toBe(search)
+  expect(search.value).toBe('morning')
+})
