@@ -12,6 +12,7 @@ import { useSlideThemes } from '../shared/SlideThemes'
 import { canSearchVerseText } from '../shared/verseSearch'
 import { EditorActions, EditorForm, SendToKioskButton } from './Editors'
 import { BackgroundPicker } from './BackgroundPicker'
+import { resultColumns } from './resultNavigation'
 import type { CueDragStart } from './useCueDrag'
 
 const segmentLabels = { book: 'Bible books', chapter: 'Chapters', verse: 'Verses' } as const
@@ -32,7 +33,7 @@ type LoadResult<T> = { key: string; values: T[] } | { key: string; error: string
 function resultOffset(event: KeyboardEvent<HTMLUListElement>, mosaic: boolean) {
   if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return 0
   if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-    const columns = mosaic ? getComputedStyle(event.currentTarget).gridTemplateColumns.split(/\s+/).length : 1
+    const columns = resultColumns(event.currentTarget, mosaic)
     return event.key === 'ArrowUp' ? -columns : columns
   }
   if (mosaic && event.key === 'ArrowLeft') return -1

@@ -6,6 +6,7 @@ import { desktop, listMedia, pickMedia } from '../shared/bridge'
 import { type MediaFile, type Source } from '../shared/model'
 import { ItemIcon } from './CueList'
 import { AddToPlaylistButton, SendToKioskButton } from './Editors'
+import { navigateResultList } from './resultNavigation'
 import type { CueDragStart } from './useCueDrag'
 
 export type MediaView = 'list' | 'tile'
@@ -117,41 +118,20 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
 
   function navigate(event: KeyboardEvent<HTMLDivElement>) {
     if (event.defaultPrevented || event.nativeEvent.isComposing || event.altKey || event.metaKey || event.shiftKey) return
-    const list = resultList.current
-    const target = event.target
-    const inResults = target instanceof Node && !!list?.contains(target)
+    if (event.key !== 'Enter') {
+      if (!busy && !picking) navigateResultList(event, resultList.current, selectedIndex, view === 'tile')
+      return
+    }
 
-    if (event.key === 'Enter' && (inResults || target instanceof HTMLInputElement || event.ctrlKey)) {
+    const target = event.target
+    const inResults = target instanceof Node && !!resultList.current?.contains(target)
+
+    if (inResults || target instanceof HTMLInputElement || event.ctrlKey) {
       const action = event.ctrlKey ? onLive : onSave
       if (!selected || !action) return
       event.preventDefault()
       if (!event.repeat) act(action)
-      return
     }
-
-    if (event.ctrlKey || busy || picking || !list || !shown.length) return
-    const { key } = event
-    const vertical = key === 'ArrowUp' || key === 'ArrowDown'
-    const horizontal = key === 'ArrowLeft' || key === 'ArrowRight'
-    if (!vertical && !(inResults && view === 'tile' && horizontal)) return
-    event.preventDefault()
-
-    const last = shown.length - 1
-    let index = selectedIndex
-    if (index < 0) {
-      index = key === 'ArrowUp' ? last : 0
-    } else if (inResults) {
-      const columns = view === 'tile' ? getComputedStyle(list).gridTemplateColumns.split(/\s+/).length : 1
-      const column = index % columns
-      if (key === 'ArrowUp' && index >= columns) index -= columns
-      if (key === 'ArrowDown' && index - column + columns <= last) index = Math.min(index + columns, last)
-      if (key === 'ArrowLeft' && column > 0) index--
-      if (key === 'ArrowRight' && column + 1 < columns && index < last) index++
-    }
-
-    const button = list.children[index]?.querySelector('button')
-    button?.focus({ preventScroll: true })
-    button?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
 
   function openLocation(next?: MediaLocation) {

@@ -7,6 +7,7 @@ import { textSlideCues, type LibraryTextSlide, type Theme } from '../shared/mode
 import { BackgroundPicker } from './BackgroundPicker'
 import { ItemIcon } from './CueList'
 import { AddToPlaylistButton, SendToKioskButton } from './Editors'
+import { navigateResultList } from './resultNavigation'
 import type { CueDragStart } from './useCueDrag'
 
 function RowAction({ icon: Icon, label, disabled, danger, onClick }: {
@@ -99,43 +100,23 @@ export function TextSlideLibrary({
 
   function navigate(event: KeyboardEvent<HTMLDivElement>) {
     if (event.defaultPrevented || event.nativeEvent.isComposing || event.altKey || event.metaKey || event.shiftKey) return
-    const list = resultList.current
+    if (event.key !== 'Enter') {
+      if (!busy) navigateResultList(event, resultList.current, selectedIndex, mosaic)
+      return
+    }
+
     const source = event.target
-    const inResults = source instanceof HTMLElement && !!list?.contains(source)
+    const inResults = source instanceof HTMLElement && !!resultList.current?.contains(source)
     const onRow = inResults && source.matches('.text-library-row-main')
-    if (event.key === 'Enter' && selected && (onRow || source === searchInput.current)) {
+    if (selected && (onRow || source === searchInput.current)) {
       const action = event.ctrlKey
         ? (actions.kind === 'browse' ? actions.onLive : undefined)
         : (actions.kind === 'pick' ? actions.onAdd : undefined)
       if (action) {
         event.preventDefault()
         if (!event.repeat && !busy) action(selected)
-        return
       }
     }
-    if (event.ctrlKey || busy || !list) return
-
-    const { key } = event
-    const vertical = key === 'ArrowDown' || key === 'ArrowUp'
-    const horizontal = key === 'ArrowLeft' || key === 'ArrowRight'
-    if (!vertical && !(mosaic && inResults && horizontal)) return
-    event.preventDefault()
-
-    const last = rows.length - 1
-    let index = selectedIndex
-    if (index < 0) {
-      index = key === 'ArrowUp' ? last : 0
-    } else if (inResults) {
-      const columns = mosaic ? getComputedStyle(list).gridTemplateColumns.split(/\s+/).length : 1
-      const column = index % columns
-      if (key === 'ArrowUp' && index >= columns) index -= columns
-      if (key === 'ArrowDown' && index - column + columns <= last) index = Math.min(index + columns, last)
-      if (key === 'ArrowLeft' && column > 0) index--
-      if (key === 'ArrowRight' && column + 1 < columns && index < last) index++
-    }
-    const button = list.children[index]?.querySelector('button')
-    button?.focus({ preventScroll: true })
-    button?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
 
   return (
