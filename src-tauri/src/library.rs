@@ -308,7 +308,7 @@ pub fn save_project(
     project: Value,
 ) -> CommandResult<()> {
     studio_only(&window)?;
-    if project["version"] != 1 || project["playlists"].as_array().is_none_or(Vec::is_empty) {
+    if project["version"] != 1 || !project["playlists"].is_array() {
         return Err("Invalid workspace format.".into());
     }
     let json = serde_json::to_string(&project).map_err(message)?;

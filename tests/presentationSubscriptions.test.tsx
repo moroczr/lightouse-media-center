@@ -30,7 +30,7 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
   Object.defineProperty(document, 'fonts', { configurable: true, value: { ready: Promise.resolve() } })
   vi.spyOn(bridge, 'loadProject').mockResolvedValue({
-    version: 1, activeId: 'service', playlists: [{ id: 'service', kind: 'playlist', title: 'Service', children: [] }],
+    version: 1, playlists: [{ id: 'service', kind: 'playlist', title: 'Service', children: [] }],
     sources: [], slideLibraries: [], textLibrary: [], displayId: null,
   })
   container = document.createElement('div')

@@ -77,7 +77,7 @@ export async function loadProject(): Promise<Project | null> {
     ? await invoke('load_project')
     : JSON.parse(localStorage.getItem(projectKey) ?? 'null')
   if (saved === null) return null
-  if (!Array.isArray(saved.playlists) || !saved.playlists.length) throw new Error('Invalid workspace format.')
+  if (!Array.isArray(saved.playlists)) throw new Error('Invalid workspace format.')
   const project = normalizeProject(saved)
   if (!desktop) return project
 

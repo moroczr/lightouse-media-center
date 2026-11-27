@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  BookOpen, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Image as ImageIcon, LibraryBig, ListMusic,
-  Monitor, MonitorOff, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, RadioTower, Settings, Trash2, Type, X,
+  BookOpen, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Image as ImageIcon, LibraryBig, ListMusic, ListPlus,
+  Monitor, MonitorOff, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, RadioTower, Save, Settings, Trash2, Type, X,
 } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError } from '../shared/messages'
@@ -35,7 +35,10 @@ type Editor =
   | { kind: 'kiosk-background' }
   | { kind: 'pick-cue'; parent: string; tab: CuePickerTab }
   | { kind: 'one-off'; parent: string }
-  | { kind: 'playlist'; parent: string | null }
+  | { kind: 'playlist'; parent: string }
+  | { kind: 'save-playlist' }
+  | { kind: 'remove-all' }
+  | { kind: 'switch-playlist'; destination: Group | null }
   | { kind: 'rename'; parent: string | null; existing: Item }
   | { kind: 'remove'; parent: string | null; item: Item }
   | { kind: 'delete-library'; folder: string }
@@ -143,17 +146,23 @@ function preferredDisplay(displays: Display[], savedId: string | null) {
   return matches.length === 1 ? matches[0] : undefined
 }
 
+function emptyPlaylist(): Group {
+  return { id: crypto.randomUUID(), kind: 'playlist', title: '', children: [] }
+}
+
 function StudioWorkspace({ saved }: { saved: Project | null }) {
   const { t } = useLanguage()
   const [project, setProject] = useState<Project>(saved ?? starterProject)
   const [saveError, setSaveError] = useState('')
-  const [persistedTextLibrary, setPersistedTextLibrary] = useState<LibraryTextSlide[]>()
-  const [persistedSlideLibraries, setPersistedSlideLibraries] = useState<string[]>()
-  const active = project.playlists.find(list => list.id === project.activeId) ?? project.playlists[0]
-  const [cueId, setCueId] = useState<string | null>(() => {
-    if (!saved) return welcomePreview.id
-    return flatten(active.children)[0]?.id ?? null
-  })
+  const lastWrite = useRef(project)
+  const [persisted, setPersisted] = useState(project)
+  const [active, updatePlaylist] = useState<Group>(emptyPlaylist)
+  const original = persisted.playlists.find(list => list.id === active.id)
+  const dirty = useMemo(() => original
+    ? active !== original && JSON.stringify(active) !== JSON.stringify(original)
+    : active.children.length > 0, [active, original])
+  const [savingPlaylist, setSavingPlaylist] = useState(false)
+  const [cueId, setCueId] = useState<string | null>(null)
   const [displayList, setDisplayList] = useState<Display[]>([])
   const [kiosk, setKiosk] = useState(false)
   const [displayBusy, setDisplayBusy] = useState(false)
@@ -183,7 +192,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
   const [transmitting, setTransmitting] = useState(false)
   const transmittingRef = useRef(false)
-  const saves = useRef(Promise.resolve())
+  const saves = useRef(Promise.resolve(true))
   const displayInUse = useRef<string | null>(null)
   const displayOperation = useRef(0)
   const drag = useCueDrag(dropCue)
@@ -245,13 +254,28 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
     setNotice({ text, error })
   }
 
-  useEffect(() => {
-    saves.current = saves.current.then(() => saveProject(project)).then(() => {
-      setPersistedTextLibrary(project.textLibrary)
-      setPersistedSlideLibraries(project.slideLibraries)
+  // Settings and playlists share one storage record. Merge each write with the
+  // last successful playlist snapshot so an unrelated setting cannot save a draft.
+  function writeWorkspace(settings: Project, changeLists?: (lists: Group[]) => Group[]) {
+    const write = saves.current.then(async () => {
+      const lists = lastWrite.current.playlists
+      const next = { ...settings, playlists: changeLists ? changeLists(lists) : lists }
+      await saveProject(next)
+      lastWrite.current = next
+      setPersisted(next)
       setSaveError('')
-    }).catch(reason => setSaveError(`Could not save changes: ${errorText(reason)}`))
-  }, [project])
+      return true
+    }).catch(reason => {
+      setSaveError(`Could not save changes: ${errorText(reason)}`)
+      return false
+    })
+    saves.current = write
+    return write
+  }
+
+  useEffect(() => {
+    if (project !== (saved ?? starterProject)) void writeWorkspace(project)
+  }, [project, saved])
 
   useEffect(() => {
     if (!notice) return
@@ -320,19 +344,29 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
     return () => { active = false; window.clearInterval(timer); cleanup?.() }
   }, [])
 
-  function updatePlaylist(fn: (root: Group) => Group) {
-    setProject(current => ({
-      ...current,
-      activeId: active.id,
-      playlists: current.playlists.map(root => root.id === active.id ? fn(root) : root),
-    }))
+  function openPlaylist(destination: Group | null) {
+    const root = destination ?? emptyPlaylist()
+    updatePlaylist(root)
+    setCueId(flatten(root.children)[0]?.id ?? null)
+    showCueList()
+    setEditor(null)
   }
 
-  function selectPlaylist(root: Group) {
-    setProject(current => ({ ...current, activeId: root.id }))
-    setCueId(flatten(root.children)[0]?.id ?? null)
-    if (root.id !== active.id) showCueList()
-    else setTab('cues')
+  function selectPlaylist(destination: Group | null) {
+    if (destination?.id === active.id) setTab('cues')
+    else if (dirty) setEditor({ kind: 'switch-playlist', destination })
+    else openPlaylist(destination)
+  }
+
+  async function savePlaylist(title: string) {
+    const snapshot = { ...active, title }
+    setEditor(null)
+    setSavingPlaylist(true)
+    const written = await writeWorkspace(project, lists => original
+      ? lists.map(list => list.id === snapshot.id ? snapshot : list)
+      : [...lists, snapshot])
+    if (written) updatePlaylist(current => current === active ? snapshot : { ...current, title })
+    setSavingPlaylist(false)
   }
 
   function cueItem(id: string | undefined, branchId?: string) {
@@ -645,16 +679,14 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
     }))
   }
 
-  function removeItem(item: Item, parent: string | null) {
+  async function removeItem(item: Item, parent: string | null) {
     if (!parent) {
-      const remaining = project.playlists.filter(root => root.id !== item.id)
-      if (!remaining.length) return
-      const removingActive = item.id === active.id
-      setProject(current => ({ ...current, playlists: remaining, activeId: removingActive ? remaining[0].id : active.id }))
-      if (removingActive) {
-        setCueId(flatten(remaining[0].children)[0]?.id ?? null)
-        showCueList()
-      }
+      setEditor(null)
+      setSavingPlaylist(true)
+      const written = await writeWorkspace(project, lists => lists.filter(list => list.id !== item.id))
+      if (written && item.id === active.id) openPlaylist(null)
+      setSavingPlaylist(false)
+      return
     } else {
       const removedSelected = flatten([item]).some(cue => cue.id === cueId)
       const withoutItem = (root: Group) => updateGroup(root, parent, group => ({
@@ -673,16 +705,9 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
     setEditor(null)
   }
 
-  function addPlaylist(name: string, parent: string | null) {
+  function addPlaylist(name: string, parent: string) {
     const group: Group = { id: crypto.randomUUID(), kind: 'playlist', title: name, children: [] }
-    if (parent) {
-      if (addItem(parent, group)) setEditor(null)
-      return
-    }
-    setProject(current => ({ ...current, playlists: [...current.playlists, group], activeId: group.id }))
-    setCueId(null)
-    showCueList()
-    setEditor(null)
+    if (addItem(parent, group)) setEditor(null)
   }
 
   function rename(item: Item, parent: string | null, title: string) {
@@ -690,15 +715,14 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
       updatePlaylist(root => updateGroup(root, parent, group => ({
         ...group, children: group.children.map(child => child.id === item.id ? { ...child, title } : child),
       })))
-    } else {
-      setProject(current => ({
-        ...current, playlists: current.playlists.map(root => root.id === item.id ? { ...root, title } : root),
-      }))
-    }
+    } else updatePlaylist(root => ({ ...root, title }))
     setEditor(null)
   }
 
-  const title = editor?.kind === 'playlist' ? (editor.parent ? t('New nested playlist') : t('New playlist'))
+  const title = editor?.kind === 'playlist' ? t('New nested playlist')
+    : editor?.kind === 'save-playlist' ? t('Save playlist')
+    : editor?.kind === 'switch-playlist' ? t('Discard changes?')
+    : editor?.kind === 'remove-all' ? t('Remove all cues?')
     : editor?.kind === 'rename' ? t(editor.existing.kind === 'playlist' ? 'Rename playlist' : 'Rename cue')
     : editor?.kind === 'kiosk-background' ? t('Kiosk background')
     : editor?.kind === 'remove' ? t('Remove from workspace')
@@ -707,8 +731,8 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
     : t('New one-off text slide')
 
   const sidebarAction = sidebarOpen ? t('Collapse sidebar') : t('Expand sidebar')
-  const savingLibrary = !saveError && (persistedTextLibrary !== project.textLibrary
-    || persistedSlideLibraries !== project.slideLibraries)
+  const savingLibrary = !saveError && (persisted.textLibrary !== project.textLibrary
+    || persisted.slideLibraries !== project.slideLibraries)
 
   return (
     <div className={`studio-shell${drag.preview ? ' studio-shell--dragging' : ''}`} {...drag.handlers}>
@@ -751,20 +775,15 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
             <section aria-labelledby="playlists-heading">
               <div className="sidebar-heading">
                 <h2 id="playlists-heading">{t('Playlists')}</h2>
-                <button type="button" className="icon-button" title={t('New playlist')} aria-label={t('New playlist')}
-                  onClick={() => setEditor({ kind: 'playlist', parent: null })}><Plus size={17} aria-hidden="true" /></button>
               </div>
-              {project.playlists.map(list => (
+              {persisted.playlists.map(list => (
                 <div className="playlist-row" key={list.id}>
                   <button type="button" className={`sidebar-item playlist-link${active.id === list.id ? ' sidebar-item--active' : ''}`}
-                    title={list.title} onClick={() => selectPlaylist(list)} aria-current={active.id === list.id ? 'true' : undefined}>
+                    title={list.title} disabled={savingPlaylist} onClick={() => selectPlaylist(list)} aria-current={active.id === list.id ? 'true' : undefined}>
                     <span>{list.title}</span><span className="playlist-count">{flatten(list.children).length}</span>
                   </button>
-                  <button type="button" className="icon-button" title={t('Rename playlist {name}', { name: list.title })}
-                    aria-label={t('Rename playlist {name}', { name: list.title })}
-                    onClick={() => setEditor({ kind: 'rename', parent: null, existing: list })}><Pencil size={14} aria-hidden="true" /></button>
                   <button type="button" className="icon-button playlist-remove" title={t('Remove playlist {name}', { name: list.title })}
-                    aria-label={t('Remove playlist {name}', { name: list.title })} disabled={project.playlists.length < 2}
+                    aria-label={t('Remove playlist {name}', { name: list.title })} disabled={savingPlaylist}
                     onClick={() => setEditor({ kind: 'remove', parent: null, item: list })}><Trash2 size={14} aria-hidden="true" /></button>
                 </div>
               ))}
@@ -818,11 +837,23 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
                 </div>
               </div>
               <section {...workspaceTabs.panelProps('cues', tab)} className="cue-panel" tabIndex={0}>
-                <div className="cue-add">
-                  <button type="button" className="icon-button" aria-label={t('Add cue')} title={t('Add cue')}
-                    aria-haspopup="dialog" onClick={() => openCuePicker(active.id)}>
-                    <Plus size={18} aria-hidden="true" />
-                  </button>
+                <div className="cue-toolbar">
+                  <div className="cue-toolbar-name">
+                    <strong title={active.title}>{active.title || t('Untitled playlist')}</strong>
+                    {dirty && <span>{t('Unsaved changes')}</span>}
+                    {original && <button className="icon-button" aria-label={t('Rename playlist')} title={t('Rename playlist')}
+                      disabled={savingPlaylist} onClick={() => setEditor({ kind: 'rename', parent: null, existing: active })}><Pencil size={14} /></button>}
+                  </div>
+                  <div className="cue-toolbar-actions">
+                    {original && <button className="icon-button" aria-label={t('New playlist')} title={t('New playlist')}
+                      disabled={savingPlaylist} onClick={() => selectPlaylist(null)}><ListPlus size={16} /></button>}
+                    <button className="button" disabled={!active.children.length || savingPlaylist}
+                      onClick={() => setEditor({ kind: 'remove-all' })}>{t('Remove all')}</button>
+                    <button className="button" disabled={!dirty || savingPlaylist} onClick={() => setEditor({ kind: 'save-playlist' })}>
+                      <Save size={15} />{t('Save')}</button>
+                    <button className="button button-primary" aria-haspopup="dialog" disabled={savingPlaylist}
+                      onClick={() => openCuePicker(active.id)}><Plus size={16} />{t('Add cue')}</button>
+                  </div>
                 </div>
                 <div className="cue-scroll">
                   <CueList root={active} selectedId={cueId} expanded={expanded}
@@ -956,6 +987,28 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
           onCreatePlaylist={() => setEditor({ kind: 'playlist', parent: editor.parent })} onClose={() => setEditor(null)} />
       )}
       {editor && editor.kind !== 'settings' && editor.kind !== 'pick-cue' && <Dialog key={editor.kind} title={title} onClose={() => setEditor(null)}>
+        {editor.kind === 'save-playlist' && (original ? <div className="editor">
+          <p>{t('Save changes to “{name}”?', { name: original.title })}</p>
+          <div className="dialog-actions">
+            <button className="button" onClick={() => setEditor(null)}>{t('Cancel')}</button>
+            <button className="button button-primary" onClick={() => void savePlaylist(active.title)}>{t('Save changes')}</button>
+          </div>
+        </div> : <NameEditor label={t('Playlist name')} action={t('Save playlist')} onSave={name => void savePlaylist(name)} />)}
+        {(editor.kind === 'remove-all' || editor.kind === 'switch-playlist') && <div className="editor">
+          <p>{t(editor.kind === 'remove-all' ? 'Remove every cue from this list?' : 'Discard the unsaved changes to this cue list?')}</p>
+          <div className="dialog-actions">
+            <button className="button" onClick={() => setEditor(null)}>{t('Cancel')}</button>
+            <button className="button button-danger" onClick={() => {
+              if (editor.kind === 'switch-playlist') openPlaylist(editor.destination)
+              else {
+                updatePlaylist(root => ({ ...root, children: [] }))
+                setCueId(null)
+                showCueList()
+                setEditor(null)
+              }
+            }}>{t(editor.kind === 'remove-all' ? 'Remove all cues' : 'Discard changes')}</button>
+          </div>
+        </div>}
         {editor.kind === 'one-off' && <TextEditor busy={transmitting} onSave={slide => addPickedCue(editor.parent, slide)} />}
         {editor.kind === 'playlist' && <NameEditor label={t('Playlist name')} action={t('Create playlist')} onSave={name => addPlaylist(name, editor.parent)} />}
         {editor.kind === 'rename' && <NameEditor label={t('Name')} action={t('Save changes')} initialValue={editor.existing.title} onSave={name => rename(editor.existing, editor.parent, name)} />}

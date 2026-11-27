@@ -114,7 +114,7 @@ button.icon-button:disabled { opacity: .35; }
 .sidebar-item:hover { background: var(--raised); color: var(--ink); }
 .sidebar-item--active { color: var(--accent-text); background: var(--accent-surface); border-color: var(--accent-border); }
 .sidebar-item--active > svg { color: var(--accent); }
-.playlist-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 2px; align-items: center; }
+.playlist-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px; align-items: center; }
 .playlist-link { min-width: 0; gap: 5px; padding-inline: 5px; }
 .playlist-row .icon-button { min-width: 24px; min-height: 27px; border-color: transparent; background: transparent; }
 .playlist-row .playlist-remove:hover:not(:disabled) { color: var(--danger-text); }
@@ -381,8 +381,13 @@ button.icon-button:disabled { opacity: .35; }
 .cue-panel, .tool-panel { flex: 1; min-height: 0; outline-offset: -3px; }
 .cue-panel { position: relative; display: flex; flex-direction: column; }
 .cue-panel[hidden] { display: none; }
-.cue-add { position: absolute; z-index: 3; inset-inline-end: 12px; bottom: 10px; }
-.cue-add .icon-button { box-shadow: 0 3px 10px #060d1370; }
+.cue-toolbar, .cue-toolbar-name, .cue-toolbar-actions { display: flex; align-items: center; gap: 6px; }
+.cue-toolbar { flex-wrap: wrap; justify-content: space-between; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+.cue-toolbar-name { min-width: 0; max-width: 100%; font-size: 13px; }
+.cue-toolbar-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cue-toolbar-name span { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.cue-toolbar-actions { flex-wrap: wrap; margin-inline-start: auto; }
+.cue-toolbar .button { min-height: 30px; }
 .tool-panel { flex: 1; outline-offset: -3px; }
 .tool-panel {
   min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 12px; scroll-padding-bottom: 68px;
@@ -398,7 +403,7 @@ button.icon-button:disabled { opacity: .35; }
 }
 .workspace-context h2 { font-size: 15px; color: var(--ink); }
 .workspace-context .button { min-height: 30px; }
-.cue-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding-bottom: 48px; }
+.cue-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .cue-rows { list-style: none; margin: 0; padding: 0; }
 .cue-scroll > .cue-rows { padding: 3px 5px; }
 .cue-row {

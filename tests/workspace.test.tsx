@@ -10,7 +10,7 @@ import { SlideThemesProvider } from '../src/shared/SlideThemes'
 import Studio from '../src/studio/Studio'
 
 const saved: Project = {
-  version: 1, activeId: 'service', displayId: null, slideLibraries: [], textLibrary: [],
+  version: 1, displayId: null, slideLibraries: [], textLibrary: [],
   playlists: [{ id: 'service', kind: 'playlist', title: 'Saved service', children: [] }],
   sources: [
     { id: 'audio', name: 'Audio', path: '/audio' },
@@ -118,8 +118,8 @@ it('keeps editor controls, shortcuts and autosave inactive until the saved works
   expect(save).not.toHaveBeenCalled()
 
   await act(async () => load.resolve(saved))
-  expect(button('Rename playlist Saved service')).toBeTruthy()
-  expect(save.mock.calls.map(([project]) => project)).toEqual([saved])
+  expect(button('Remove playlist Saved service')).toBeTruthy()
+  expect(save).not.toHaveBeenCalled()
 })
 
 it('preserves stored data on load failure and opens it when Retry succeeds', async () => {
@@ -132,18 +132,19 @@ it('preserves stored data on load failure and opens it when Retry succeeds', asy
 
   await act(async () => button('Retry').click())
   expect(load).toHaveBeenCalledTimes(2)
-  expect(button('Rename playlist Saved service')).toBeTruthy()
-  expect(save.mock.calls.map(([project]) => project)).toEqual([saved])
+  expect(button('Remove playlist Saved service')).toBeTruthy()
+  expect(save).not.toHaveBeenCalled()
 })
 
-it('keeps a saved workspace with no playlists available for recovery', async () => {
-  await bridge.saveProject({ ...saved, playlists: [] })
-  const save = vi.spyOn(bridge, 'saveProject')
+it('opens an empty draft when no saved playlists remain', async () => {
   await openStudio()
-  expect(container.querySelector('[role="alert"]')?.textContent).toContain('Invalid workspace format.')
-  expect(button('Retry')).toBeTruthy()
-  expect(save).not.toHaveBeenCalled()
-  await expect(bridge.loadProject()).rejects.toThrow('Invalid workspace format.')
+  await openDialog('Remove playlist Saved service')
+  await act(async () => button('Remove').click())
+  expect((await bridge.loadProject())?.playlists).toEqual([])
+  await act(async () => root.render(null))
+  await openStudio()
+  expect(button('Add cue').disabled).toBe(false)
+  expect(container.querySelector('.playlist-link')).toBeNull()
 })
 
 it('saves two rapid edits in order while the first write is pending', async () => {
@@ -260,9 +261,64 @@ it('browses saved media libraries in Add cue and adds the selected file to the p
   await act(async () => entries()[0].click())
   await act(async () => add.click())
   expect(container.querySelector('dialog')).toBeNull()
-  expect((await bridge.loadProject())?.playlists[0].children).toEqual([
-    expect.objectContaining({ kind: 'audio', title: 'Morning', path: file.path }),
-  ])
+  expect(container.querySelector('.cue-title')?.textContent).toBe('Morning')
+  expect(container.querySelector('.playlist-link[aria-current]')).toBeNull()
+  expect((await bridge.loadProject())?.playlists).toEqual(saved.playlists)
+
+  await openDialog('Save')
+  await editSearch(container.querySelector<HTMLInputElement>('dialog input')!, 'Morning service')
+  await act(async () => button('Save playlist').click())
+  const lists = (await bridge.loadProject())!.playlists
+  expect(lists[0]).toEqual(saved.playlists[0])
+  expect(lists[1]).toMatchObject({ title: 'Morning service', children: [
+    { kind: 'audio', title: 'Morning', path: file.path },
+  ] })
+  expect(button('Save').disabled).toBe(true)
+})
+
+it('confirms changes to saved playlists and retains the draft after a failed save', async () => {
+  const lists: Project['playlists'] = [...saved.playlists, {
+    id: 'morning', kind: 'playlist', title: 'Morning service',
+    children: [{ id: 'morning-song', kind: 'audio', title: 'Morning', path: '/audio/morning.mp3' }],
+  }]
+  // Older workspaces recorded which playlist was selected on exit.
+  const legacyProject = { ...saved, activeId: 'morning', playlists: lists }
+  await bridge.saveProject(legacyProject)
+  await openStudio()
+  expect(container.querySelector('.playlist-link[aria-current]')).toBeNull()
+  await act(async () => container.querySelector<HTMLButtonElement>('.playlist-link[title="Morning service"]')!.click())
+  expect(button('Save').disabled).toBe(true)
+  await openDialog('Remove all')
+  await act(async () => button('Remove all cues').click())
+  expect(container.querySelector('.cue-title')).toBeNull()
+  await openDialog('New playlist')
+  await act(async () => button('Cancel').click())
+  await openDialog('Save')
+  await act(async () => button('Cancel').click())
+  expect((await bridge.loadProject())?.playlists).toEqual(lists)
+
+  // A settings write while editing must preserve the saved cues.
+  await act(async () => button('Media').click())
+  await act(async () => document.querySelector<HTMLButtonElement>('#workspace-panel-media button[title="Audio"]')!.click())
+  await act(async () => button('Remove source Audio').click())
+  expect((await bridge.loadProject())?.playlists).toEqual(lists)
+  await act(async () => button('Cue List').click())
+
+  const write = vi.spyOn(bridge, 'saveProject').mockRejectedValueOnce(new Error('Storage unavailable'))
+  await openDialog('Save')
+  await act(async () => button('Save changes').click())
+  expect(container.querySelector('.problem')?.textContent).toContain('Storage unavailable')
+  expect(button('Save').disabled).toBe(false)
+  expect((await bridge.loadProject())?.playlists).toEqual(lists)
+  await openDialog('Save')
+  await act(async () => button('Save changes').click())
+  expect(write).toHaveBeenCalledTimes(2)
+  expect((await bridge.loadProject())?.playlists).toEqual([lists[0], { ...lists[1], children: [] }])
+  expect(button('Save').disabled).toBe(true)
+  await act(async () => root.render(null))
+  await openStudio()
+  expect(container.querySelector('.playlist-link[aria-current]')).toBeNull()
+  expect(container.querySelector('.cue-title')).toBeNull()
 })
 
 it('focuses the Media search field from the Studio shortcut and preserves it across tab changes', async () => {

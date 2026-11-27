@@ -140,7 +140,6 @@ export interface Project {
   sources: Source[]
   textLibrary: LibraryTextSlide[]
   slideLibraries: string[]
-  activeId: string
   displayId: string | null
 }
 
@@ -214,6 +213,7 @@ type SavedGroup = Omit<Group, 'children'> & {
   children: (Exclude<Item, Group | TextSlide> | SavedTextSlide | LegacyTextSlide | SavedGroup)[]
 }
 export type SavedProject = Omit<Project, 'playlists' | 'textLibrary' | 'slideLibraries'> & {
+  activeId?: string
   playlists: SavedGroup[]
   slideLibraries?: string[]
   textLibrary?: (Omit<LibraryTextSlide, 'slide'> & { slide: SavedTextSlide; name?: string })[]
@@ -229,7 +229,7 @@ function normalizeTextSlide({ caption, theme: _theme, ...slide }: SavedTextSlide
   return { ...slide, title: title || slide.title }
 }
 
-export function normalizeProject(project: SavedProject): Project {
+export function normalizeProject({ activeId: _legacySelection, ...project }: SavedProject): Project {
   function migrateGroup(group: SavedGroup): Group {
     return {
       ...group,
@@ -345,7 +345,6 @@ export const welcomePreview = textSlideCues(welcome)[0]
 
 export const starterProject: Project = {
   version: 1,
-  activeId: 'sunday',
   displayId: null,
   sources: [],
   textLibrary: [],
