@@ -115,7 +115,7 @@ it('moves through a partial slide grid and returns from search to the selected r
   expect(pick).toHaveBeenCalledExactlyOnceWith(items[3])
 })
 
-it('sends the arrow-selected media file live with Space or Ctrl+Enter', async () => {
+it('sends the arrow-selected media file live with Ctrl+Enter', async () => {
   vi.spyOn(bridge, 'listMedia').mockResolvedValue([file])
   const live = vi.fn()
   const preview = vi.fn()
@@ -134,10 +134,12 @@ it('sends the arrow-selected media file live with Space or Ctrl+Enter', async ()
   expect(document.activeElement?.textContent).toContain(file.name)
   expect(preview).toHaveBeenLastCalledWith(expect.objectContaining(file))
   expect(await press('Enter')).toBe(false)
+  expect(document.activeElement?.getAttribute('aria-keyshortcuts')).toBe('Control+Enter')
+  expect(await press(' ')).toBe(false)
   expect(await press(' ', { ctrlKey: true })).toBe(false)
   expect(live).not.toHaveBeenCalled()
-  expect(await press(' ')).toBe(true)
-  expect(await press(' ', { repeat: true })).toBe(true)
+  expect(await press('Enter', { ctrlKey: true })).toBe(true)
+  expect(await press('Enter', { ctrlKey: true, repeat: true })).toBe(true)
   expect(live).toHaveBeenCalledExactlyOnceWith(expect.objectContaining(file))
   container.querySelector<HTMLInputElement>('input[type="search"]')!.focus()
   expect(await press(' ')).toBe(false)
@@ -179,7 +181,7 @@ it('pages past both ends of the displayed verse window without submitting a cue'
   expect(save).toHaveBeenCalledExactlyOnceWith(cue)
 })
 
-it('moves focus from a completed Bible reference to the previewed verse and sends it live with Space', async () => {
+it('moves focus from a completed Bible reference to the previewed verse and sends it live with Ctrl+Enter', async () => {
   const book = { id: 'GEN', name: 'Genesis', chapters: 1 }
   vi.spyOn(bridge.bible, 'settings').mockResolvedValue({
     defaultId: 'test', databases: [{ id: 'test', name: 'Test', enabled: true, fileName: null }],
@@ -206,7 +208,7 @@ it('moves focus from a completed Bible reference to the previewed verse and send
   expect(document.activeElement?.textContent).toContain('Genesis 1:2')
   expect(preview).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Genesis 1:2' }))
   expect(live).not.toHaveBeenCalled()
-  expect(await press(' ')).toBe(true)
+  expect(await press('Enter', { ctrlKey: true })).toBe(true)
   expect(live).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
     reference: { translation: 'test', book: 'GEN', chapter: 1, verse: 2 },
   }))
@@ -291,7 +293,7 @@ it('uses the selected media row for drag preview and live actions and disables s
   expect(await press('ArrowDown')).toBe(true)
   expect(document.activeElement).toBe(busyRow)
   await act(async () => { busyRow.dispatchEvent(new Event('pointerdown', { bubbles: true })) })
-  await press(' ')
+  await press('Enter', { ctrlKey: true })
   expect(startDrag).toHaveBeenCalledTimes(1)
   expect(live).toHaveBeenCalledTimes(1)
   expect(container.querySelector<HTMLButtonElement>('.result-send')!.disabled).toBe(true)
@@ -404,7 +406,7 @@ it('searches all media libraries from the root and only the current subtree insi
   expect(scan).toHaveBeenCalledTimes(2)
   expect(await press('ArrowDown')).toBe(true)
   expect(document.activeElement?.textContent).toContain('Morning film')
-  expect(await press(' ')).toBe(true)
+  expect(await press('Enter', { ctrlKey: true })).toBe(true)
   expect(live).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: 'Morning film' }))
   await type('music')
   expect(labels()).toEqual(['Music', 'Morning song'])

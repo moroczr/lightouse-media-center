@@ -80,13 +80,10 @@ export function useResultBrowser(options: BrowserOptions) {
     const inList = listRef.current?.contains(target)
     const onRow = inList && target.closest('[data-result-button]')
     const inSearch = target instanceof HTMLInputElement && ['text', 'search'].includes(target.type)
-    if (event.key === 'Enter' || event.key === ' ') {
+    if (event.key === 'Enter') {
       const item = items[selectedIndex]
-      const space = event.key === ' '
-      const sendShortcut = event.key === 'Enter' && event.ctrlKey
-      if (!onRow && !inSearch && !sendShortcut) return
-      if (space && (!onRow || event.ctrlKey)) return
-      const action = space || sendShortcut ? item?.live : item?.pick
+      if (!event.ctrlKey && !onRow && !inSearch) return
+      const action = event.ctrlKey ? item?.live : item?.pick
       if (!action) return
       event.preventDefault()
       if (!disabled && !event.repeat) action()
@@ -138,7 +135,7 @@ export function ResultBrowser({ browser, variant = 'catalog', className = '', la
             <button type="button" data-result-button="" data-selected={selected ? '' : undefined} className={layout.button + (startDrag ? ' cue-draggable' : '')}
               title={item.title} tabIndex={index === Math.max(0, selectedIndex) ? 0 : -1}
               ref={selected ? selectedRef : undefined} aria-pressed={item.open ? undefined : selected}
-              aria-keyshortcuts={live && !disabled ? 'Space Control+Enter' : undefined}
+              aria-keyshortcuts={live && !disabled ? 'Control+Enter' : undefined}
               onPointerDown={startDrag}
               onClick={event => {
                 // Extra clicks in the same sequence may land on a new row after opening a folder.

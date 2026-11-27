@@ -358,7 +358,9 @@ it.each(['List view', 'Mosaic view'])('opens slide sets and presents the chosen 
   expect(document.activeElement).toBe(row('First verse'))
   expect(preview()).toBe('First verse')
   expect(live()).toBe('Final verse')
-  expect(await press(document.activeElement!, ' ')).toBe(true)
+  expect(await press(document.activeElement!, ' ')).toBe(false)
+  expect(live()).toBe('Final verse')
+  expect(await press(document.activeElement!, 'Enter', { ctrlKey: true })).toBe(true)
   expect(live()).toBe('First verse')
   expect((await bridge.getStage()).cue).toMatchObject({ kind: 'text', text: 'First verse' })
 
@@ -374,7 +376,7 @@ it.each(['List view', 'Mosaic view'])('opens slide sets and presents the chosen 
   expect(live()).toBe('Second verse')
 })
 
-it.each(['Space', 'Go live'])('opens the passage after presenting a Bible text match with %s', async action => {
+it.each(['Ctrl+Enter', 'Go live'])('opens the passage after presenting a Bible text match with %s', async action => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
   Object.defineProperty(document, 'fonts', { configurable: true, value: { ready: Promise.resolve() } })
   await bridge.present(null)
@@ -407,8 +409,8 @@ it.each(['Space', 'Go live'])('opens the passage after presenting a Bible text m
   expect(container.querySelector('.preview-panel--next .slide-text')?.textContent).toBe('Last match')
   expect((await bridge.getStage()).cue).toBeNull()
 
-  const activate = () => action === 'Space'
-    ? press(rows()[1], ' ')
+  const activate = () => action === 'Ctrl+Enter'
+    ? press(rows()[1], 'Enter', { ctrlKey: true })
     : act(async () => button('Go live').click())
   vi.spyOn(bridge, 'present').mockRejectedValueOnce(new Error('Could not send'))
   await activate()
