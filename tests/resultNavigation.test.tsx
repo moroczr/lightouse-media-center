@@ -55,6 +55,10 @@ it('leaves focus in an empty search and picks a single media result only on Ente
     onFilterChange={vi.fn()} view="list" onViewChange={vi.fn()} busy={false} onSave={pick} />
 
   await render(picker('video'))
+  const library = container.querySelector<HTMLButtonElement>('.media-result')!
+  expect(library.textContent).toContain(source.name)
+  expect(bridge.listMedia).not.toHaveBeenCalled()
+  await act(async () => library.click())
   const search = container.querySelector<HTMLInputElement>('input[type="search"]')!
   search.focus()
   expect(await press('ArrowDown')).toBe(false)

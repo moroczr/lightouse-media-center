@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  BookOpen, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, FolderOpen, FolderPlus, Image as ImageIcon, LibraryBig, ListMusic,
+  BookOpen, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Image as ImageIcon, LibraryBig, ListMusic,
   Monitor, MonitorOff, PanelLeftClose, PanelLeftOpen, Pencil, Play, Plus, RadioTower, Settings, Trash2, Type, X,
 } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
@@ -605,8 +605,8 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
     }
   }
 
-  function addSourceFromSidebar() {
-    void addSource().catch(reason => tell(errorText(reason), true))
+  function removeSource(id: string) {
+    setProject(current => ({ ...current, sources: current.sources.filter(source => source.id !== id) }))
   }
 
   function editItem(item: Item, parent: string) {
@@ -698,7 +698,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
   return (
     <div className={`studio-shell${drag.preview ? ' studio-shell--dragging' : ''}`} {...drag.handlers}>
       <div className="workspace">
-        <aside className={`sidebar${sidebarOpen ? '' : ' sidebar--collapsed'}`} aria-label={t('Playlists and media sources')}>
+        <aside className={`sidebar${sidebarOpen ? '' : ' sidebar--collapsed'}`} aria-label={t('Playlists')}>
           <div className="sidebar-kiosk" role="group" aria-label={t('Kiosk controls')}>
             <div className="sidebar-kiosk-heading">
               <div className="sidebar-kiosk-status" title={t(kiosk ? 'Kiosk connected' : 'Kiosk on standby')}>
@@ -733,7 +733,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
             </button>
           </div>
           <div id="studio-sidebar-content" className="sidebar-content" hidden={!sidebarOpen}>
-            <section className="sidebar-section" aria-labelledby="playlists-heading">
+            <section aria-labelledby="playlists-heading">
               <div className="sidebar-heading">
                 <h2 id="playlists-heading">{t('Playlists')}</h2>
                 <button type="button" className="icon-button" title={t('New playlist')} aria-label={t('New playlist')}
@@ -753,18 +753,6 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
                     onClick={() => setEditor({ kind: 'remove', parent: null, item: list })}><Trash2 size={14} aria-hidden="true" /></button>
                 </div>
               ))}
-            </section>
-            <section className="sidebar-section sidebar-section--media-sources">
-              <div className="sidebar-heading"><h2>{t('Media sources')}</h2><button className="icon-button" title={t('Add source folder')} aria-label={t('Add source folder')} onClick={addSourceFromSidebar}><Plus size={17} /></button></div>
-              {project.sources.map(source => (
-                <div className="source-row" key={source.id}>
-                  <div className="sidebar-item" title={source.path}><FolderOpen size={16} /><span>{source.name}</span></div>
-                  <button className="icon-button" title={t('Remove source folder')} aria-label={t('Remove source {name}', { name: source.name })} onClick={() => setProject(current => ({
-                    ...current, sources: current.sources.filter(item => item.id !== source.id),
-                  }))}><X size={14} /></button>
-                </div>
-              ))}
-              {!project.sources.length && <button className="add-folder" onClick={addSourceFromSidebar}><FolderPlus size={16} /> {t('Add a folder')}</button>}
             </section>
           </div>
           <div className="sidebar-utilities">
@@ -842,7 +830,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
 
               <section {...workspaceTabs.panelProps('media', tab)} className="tool-panel" tabIndex={0}>
                 <MediaBrowser active={tab === 'media'} sources={project.sources} filter={mediaFilter} onFilterChange={setMediaFilter}
-                  view={mediaView} onViewChange={setMediaView} onAddFolder={addSource} busy={transmitting}
+                  view={mediaView} onViewChange={setMediaView} onAddFolder={addSource} onRemoveFolder={removeSource} busy={transmitting}
                   onPreview={setMediaSelection} onLive={file => void send(mediaCue(file), 'keep-queue')}
                   onCuePointerDown={drag.start} />
               </section>

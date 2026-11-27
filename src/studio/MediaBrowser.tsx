@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronRight, CircleAlert, Folder, FolderOpen, FolderPlus, Search } from 'lucide-react'
+import { ChevronRight, CircleAlert, Folder, FolderOpen, FolderPlus, Search, X } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError, type Message } from '../shared/messages'
 import { desktop, listMedia, pickMedia } from '../shared/bridge'
@@ -29,13 +29,14 @@ function fileLocation(file: MediaFile, source: Source) {
   return [source.name, ...folders].join(' / ')
 }
 
-export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChange, onAddFolder, active = true, busy, onSave, onPreview, onLive, onCuePointerDown }: {
+export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChange, onAddFolder, onRemoveFolder, active = true, busy, onSave, onPreview, onLive, onCuePointerDown }: {
   sources: Source[];
   filter: MediaFilter;
   onFilterChange: (filter: MediaFilter) => void;
   view: ViewMode;
   onViewChange: (view: ViewMode) => void;
   onAddFolder?: () => Promise<void>;
+  onRemoveFolder?: (id: string) => void;
   active?: boolean;
   busy: boolean;
   onSave?: (file: MediaFile) => void;
@@ -52,15 +53,14 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
   const [pickerError, setPickerError] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
   const [catalog, setCatalog] = useState<{ sources: Source[]; items: CatalogItem[]; unavailable: string[] }>()
-  const browseSources = !!onLive
   const source = location?.kind === 'source' ? sources.find(source => source.id === location.id) : undefined
   const openedFile = location?.kind === 'file' ? location.file : undefined
-  const atRoot = browseSources && !source && !openedFile
+  const atRoot = !source && !openedFile
   const searchAllSources = atRoot && !!query.trim()
   const scanSources = useMemo(() => {
     if (source) return [source]
-    return searchAllSources || !browseSources ? sources : []
-  }, [source, searchAllSources, browseSources, sources])
+    return searchAllSources ? sources : []
+  }, [source, searchAllSources, sources])
 
   useEffect(() => {
     if (location?.kind === 'source' && !source) {
@@ -135,8 +135,7 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
       return {
         ...common, title: item.path, description: item.location, kind: item.kind,
         icon: <ItemIcon kind={item.kind} size={grid ? 28 : 16} />,
-        badge: item.kind === 'audio' || !onLive ? t(item.kind === 'video' ? 'Movie' : 'Audio') : undefined,
-        accessory: !onLive && <Check className="media-result-check" size={15} aria-hidden="true" />,
+        badge: item.kind === 'audio' ? t('Audio') : undefined,
         pick: onSave && (() => onSave(item)), live: onLive && (() => onLive(item)),
       }
     }),
@@ -187,13 +186,18 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
       </div>
 
       <div className="media-options">
-        {browseSources && <nav className="media-path" aria-label={t('Media sources')}>
+        <nav className="media-path" aria-label={t('Media sources')}>
           {atRoot ? <span aria-current="location">{t('Media sources')}</span> : <>
             <button type="button" className="button button-quiet" onClick={() => openLocation()}>{t('Media sources')}</button>
             <ChevronRight size={14} aria-hidden="true" />
             <span aria-current="location" title={source?.name}>{source?.name ?? t('Opened file')}</span>
+            {source && onRemoveFolder && <button type="button" className="icon-button" disabled={busy || picking}
+              title={t('Remove source {name}', { name: source.name })} aria-label={t('Remove source {name}', { name: source.name })}
+              onClick={() => { onRemoveFolder(source.id); openLocation() }}>
+              <X size={15} aria-hidden="true" />
+            </button>}
           </>}
-        </nav>}
+        </nav>
         <div className="media-segment" role="group" aria-label={t('Media type')}>
           {filters.map(option => (
             <button key={option.value} className="button" aria-pressed={filter === option.value}
@@ -213,8 +217,7 @@ export function MediaBrowser({ sources, filter, onFilterChange, view, onViewChan
           <ResultBrowser browser={browser} onCuePointerDown={onCuePointerDown} />
         ) : (
           <p className="media-empty" role="status">{loading ? t('Scanning media folders…')
-            : atRoot && !sources.length ? t('Add a folder to browse your media, or open a file.')
-            : !sources.length && !openedFile ? t('No media sources added.')
+            : atRoot && !sources.length ? t(onAddFolder ? 'Add a folder to browse your media, or open a file.' : 'No media sources added.')
             : query.trim() || filter !== 'all' ? t('No media matches your search or filter.')
             : t(source ? 'No audio or video files in this folder.' : 'No media found in your source folders.')}</p>
         )}

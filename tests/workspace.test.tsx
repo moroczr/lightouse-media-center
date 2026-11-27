@@ -100,7 +100,7 @@ it('preserves stored data on load failure and opens it when Retry succeeds', asy
 
   await act(async () => button('Retry').click())
   expect(load).toHaveBeenCalledTimes(2)
-  expect(button('Remove source Video')).toBeTruthy()
+  expect(button('Rename playlist Saved service')).toBeTruthy()
   expect(save.mock.calls.map(([project]) => project)).toEqual([saved])
 })
 
@@ -123,9 +123,16 @@ it('saves two rapid edits in order while the first write is pending', async () =
     await write(project)
   })
 
-  await act(async () => button('Remove source Audio').click())
-  await act(async () => button('Remove source Video').click())
-  expect(container.querySelector('.source-row')).toBeNull()
+  expect(container.querySelector('aside')?.textContent).not.toContain('Media sources')
+  await act(async () => button('Media').click())
+  const mediaPanel = document.getElementById('workspace-panel-media')!
+  for (const source of saved.sources) {
+    const folder = mediaPanel.querySelector<HTMLButtonElement>(`button[title="${source.name}"]`)!
+    await act(async () => folder.click())
+    await act(async () => button(`Remove source ${source.name}`).click())
+    expect(mediaPanel.querySelector('[aria-current="location"]')?.textContent).toBe('Media sources')
+  }
+  expect(mediaPanel.querySelector('[data-result-button]')).toBeNull()
   expect(save.mock.calls.map(([project]) => project.sources)).toEqual([[saved.sources[1]]])
   expect(await bridge.loadProject()).toEqual(saved)
 
@@ -189,6 +196,36 @@ it.each([
     expect(await press(tabs[1], 'b', { ctrlKey: true })).toBe(true)
     expectSelected(2)
   }
+})
+
+it('browses saved media libraries in Add cue and adds the selected file to the playlist', async () => {
+  const file = { kind: 'audio', name: 'Morning', path: '/audio/morning.mp3' } as const
+  const scan = vi.spyOn(bridge, 'listMedia').mockImplementation(async source => source.id === 'audio' ? [file] : [])
+  await openStudio()
+  await openDialog('Add cue')
+  const panel = document.getElementById('cue-picker-panel-media')!
+  const entries = () => Array.from(panel.querySelectorAll<HTMLButtonElement>('[data-result-button]'))
+  const names = () => entries().map(row => row.querySelector('strong')?.textContent)
+  const add = panel.querySelector<HTMLButtonElement>('.media-footer button')!
+
+  expect(names()).toEqual(['Audio', 'Video'])
+  expect(scan).not.toHaveBeenCalled()
+  expect(add.disabled).toBe(true)
+  await act(async () => entries()[1].click())
+  expect(names()).toEqual([])
+  expect(panel.textContent).toContain('No audio or video files in this folder.')
+  await act(async () => panel.querySelector<HTMLButtonElement>('nav button')!.click())
+  expect(names()).toEqual(['Audio', 'Video'])
+
+  await act(async () => entries()[0].click())
+  expect(panel.querySelector('[aria-current="location"]')?.textContent).toBe('Audio')
+  expect(names()).toEqual(['Morning'])
+  await act(async () => entries()[0].click())
+  await act(async () => add.click())
+  expect(container.querySelector('dialog')).toBeNull()
+  expect((await bridge.loadProject())?.playlists[0].children).toEqual([
+    expect.objectContaining({ kind: 'audio', title: 'Morning', path: file.path }),
+  ])
 })
 
 it('focuses the Media search field from the Studio shortcut and preserves it across tab changes', async () => {

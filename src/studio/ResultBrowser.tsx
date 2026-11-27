@@ -14,7 +14,6 @@ export type BrowserItem = {
   icon?: ReactNode
   thumbnail?: ReactNode
   badge?: string
-  accessory?: ReactNode
   actions?: ReactNode
   select: () => void
 } & (
@@ -161,7 +160,6 @@ export function ResultBrowser({ browser, variant = 'catalog', className = '', la
               {item.icon}
               {passage ? text : <span className="media-result-text">{text}</span>}
               {item.badge && <span className="media-result-type">{item.badge}</span>}
-              {item.accessory}
               {item.open && <ChevronRight className="media-folder-chevron" size={15} aria-hidden="true" />}
             </button>
             {thumbnail && (item.actions || send)
