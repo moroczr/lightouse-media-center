@@ -176,7 +176,10 @@ it.each([
     })
   }
 
-  if (opener === 'Add cue') expectSelected(0)
+  if (opener === 'Add cue') {
+    expect(tabs.map(tab => tab.textContent)).toEqual(['Media', 'Bible lookup', 'Slides'])
+    expectSelected(0)
+  }
   tabs[0].focus()
   expectSelected(0, true)
   for (const modifier of ['ctrlKey', 'altKey', 'metaKey', 'shiftKey']) {
@@ -193,8 +196,10 @@ it.each([
   await act(async () => tabs[1].click())
   expectSelected(1)
   if (opener === 'Add cue') {
-    expect(await press(tabs[1], 'b', { ctrlKey: true })).toBe(true)
+    expect(await press(tabs[1], 't', { ctrlKey: true })).toBe(true)
     expectSelected(2)
+    expect(await press(tabs[2], 'b', { ctrlKey: true })).toBe(true)
+    expectSelected(1)
   }
 })
 

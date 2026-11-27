@@ -11,8 +11,8 @@ import { defineTabs, TabList } from './TabList'
 
 const tabs = defineTabs('cue-picker', [
   { id: 'media', label: 'Media', icon: LibraryBig },
-  { id: 'text', label: 'Slides', icon: Type },
   { id: 'scripture', label: 'Bible lookup', icon: BookOpen },
+  { id: 'text', label: 'Slides', icon: Type },
 ])
 
 export type CuePickerTab = (typeof tabs.options)[number]['id']
@@ -50,14 +50,14 @@ export function CuePickerDialog({
         <MediaBrowser active={tab === 'media'} sources={project.sources} filter={filter} onFilterChange={setFilter} view={mediaView} onViewChange={setMediaView}
           busy={busy} onSave={file => onAdd(mediaCue(file))} />
       </section>
+      <section {...tabs.panelProps('scripture', tab)} className="scripture-panel">
+        <ScriptureEditor active={tab === 'scripture'} settingsRevision={settingsRevision} busy={busy}
+          view={scriptureView} onViewChange={setScriptureView} onSave={onAdd} pickOnly />
+      </section>
       <section {...tabs.panelProps('text', tab)}>
         <TextSlideLibrary active={tab === 'text'} items={project.textLibrary} libraries={project.slideLibraries} theme={textTheme}
           view={textView} onViewChange={setTextView} busy={busy} saving={false} error=""
           actions={{ kind: 'pick', onAdd: item => onAdd(copyLibraryTextSlide(item)) }} />
-      </section>
-      <section {...tabs.panelProps('scripture', tab)} className="scripture-panel">
-        <ScriptureEditor active={tab === 'scripture'} settingsRevision={settingsRevision} busy={busy}
-          view={scriptureView} onViewChange={setScriptureView} onSave={onAdd} pickOnly />
       </section>
       <div className="cue-picker-create">
         <button type="button" className="button button-quiet" onClick={onCreateText}>
