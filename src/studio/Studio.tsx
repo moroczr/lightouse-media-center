@@ -131,6 +131,18 @@ export default function Studio() {
   )
 }
 
+function preferredDisplay(displays: Display[], savedId: string | null) {
+  const exact = displays.find(display => display.id === savedId)
+  if (exact || !savedId) return exact
+
+  // Native monitor IDs end in :x:y. A uniquely named monitor can move between launches.
+  const monitorName = (id: string) => /^(.*):-?\d+:-?\d+$/.exec(id)?.[1]
+  const name = monitorName(savedId)
+  if (!name) return undefined
+  const matches = displays.filter(display => monitorName(display.id) === name)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
 function StudioWorkspace({ saved }: { saved: Project | null }) {
   const { t } = useLanguage()
   const [project, setProject] = useState<Project>(saved ?? starterProject)
@@ -192,7 +204,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
   const upcoming = browserPreview ?? queued
   const next = upcoming?.kind === 'text' ? { ...upcoming, theme: textTheme }
     : browserPreview?.kind === 'scripture' ? browserPreview : resolved?.cue ?? null
-  const savedDisplay = displayList.find(display => display.id === project.displayId)
+  const savedDisplay = preferredDisplay(displayList, project.displayId)
   const display = savedDisplay ?? displayList.find(item => !item.studio) ?? displayList[0]
   const firstCue = sequence[0]
   const standby = !kiosk && stage.revision === 0 && !stage.cue && !desktop
@@ -430,6 +442,9 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
         setKiosk(false)
       } else if (display) {
         await openKiosk(display.id)
+        if (!project.displayId || (savedDisplay && project.displayId !== display.id)) {
+          setProject(current => ({ ...current, displayId: display.id }))
+        }
         displayInUse.current = display.id
         setKiosk(true)
       }

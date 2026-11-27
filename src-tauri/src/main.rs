@@ -13,8 +13,9 @@ fn main() {
         .setup(|app| {
             let directory = app.path().app_data_dir()?;
             let bibles = app.path().home_dir()?.join(".verse-database");
-            app.manage(Library::open(&directory, bibles)?);
-            app.manage(Presentation::default());
+            let library = Library::open(&directory, bibles)?;
+            app.manage(Presentation::new(library.load_fade()?));
+            app.manage(library);
             Ok(())
         })
         .on_window_event(presentation::window_event)

@@ -71,6 +71,38 @@ async function editSearch(input: HTMLInputElement, value: string) {
   })
 }
 
+it('remembers the Kiosk display across restarts and a change in monitor layout', async () => {
+  const studio = { id: 'Studio:0:0', name: 'Studio', width: 1440, height: 900, studio: true }
+  const spare = { ...studio, id: 'Spare:1440:0', name: 'Spare', studio: false }
+  const projector = { ...spare, id: 'Projector:3360:0', name: 'Projector' }
+  const displays = vi.spyOn(bridge, 'displays').mockResolvedValue([studio, spare, projector])
+  const selector = () => container.querySelector<HTMLSelectElement>('select[aria-label="Kiosk display"]')!
+  await openStudio()
+  expect(selector().value).toBe(spare.id)
+  await act(async () => {
+    selector().value = projector.id
+    selector().dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  expect((await bridge.loadProject())?.displayId).toBe(projector.id)
+
+  await act(async () => root.render(null))
+  displays.mockResolvedValue([studio, spare])
+  await openStudio()
+  expect(selector().value).toBe(spare.id)
+  expect((await bridge.loadProject())?.displayId).toBe(projector.id)
+
+  await act(async () => root.render(null))
+  const moved = { ...projector, id: 'Projector:-1920:0' }
+  displays.mockResolvedValue([spare, moved, studio])
+  const launch = vi.spyOn(bridge, 'openKiosk').mockResolvedValue(undefined)
+  await openStudio()
+  expect(selector().value).toBe(moved.id)
+  expect(launch).not.toHaveBeenCalled()
+  await act(async () => button('Launch Kiosk').click())
+  expect(launch).toHaveBeenCalledWith(moved.id)
+  expect((await bridge.loadProject())?.displayId).toBe(moved.id)
+})
+
 it('keeps editor controls, shortcuts and autosave inactive until the saved workspace loads', async () => {
   const load = deferred<Project>()
   vi.spyOn(bridge, 'loadProject').mockReturnValueOnce(load.promise)

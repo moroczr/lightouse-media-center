@@ -24,7 +24,7 @@ To package the app on the current platform, run `npm run tauri build`. On macOS,
 5. When video or audio is live, use the playback controls beneath the previews to play, pause, stop and rewind, seek, or skip 10 seconds in either direction. For a Bible verse, **Previous verse** and **Next verse** beneath the previews change the displayed verse without advancing the playlist. The vertical Kiosk volume and mute controls beside **Preview** are available before and during playback, including when a text or Bible verse cue is live.
 6. Click **Blackout** in the bottom-right corner of **Live**, or press **Ctrl+Shift+B** in Studio. The audience sees the configured Kiosk background, or a black screen if no image is set. Audio continues during Blackout. Press **Escape** in the Kiosk to close it.
 
-Use the **Kiosk background** image button at the bottom of the left pane to choose a PNG, JPEG, or WebP image. Studio saves a copy and shows it when no cue is live or Blackout is active. **Remove image** restores the black screen in both cases.
+Use the **Kiosk background** image button at the bottom of the left pane to choose a PNG, JPEG, or WebP image. Studio saves a copy and shows it behind audio cues, when no cue is live, and during Blackout. During audio playback, animated equalizer bars appear over the image. **Remove image** restores the black background.
 
 Use the sidebar toggle at the top left to collapse or expand the playlists. Kiosk controls and Settings stay available in the collapsed pane. Open the **+** menu in the bottom-right corner of **Cue List** to add a cue. Use the pencil and trash buttons beside a playlist’s name to rename or remove it.
 

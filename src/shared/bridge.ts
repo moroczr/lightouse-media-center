@@ -18,6 +18,7 @@ function dialogLabels(title: Message, filter?: Message) {
   }
 }
 
+const fadeKey = 'lighthouse-playback-fade'
 const projectKey = 'lighthouse-project-v1'
 const backgroundKey = 'nemesa-kiosk-background'
 const backgroundEvent = 'kiosk-background-updated'
@@ -26,7 +27,7 @@ const channel = desktop ? null : new BroadcastChannel('nemesa-stage')
 const browserFiles = new Map<string, File>()
 const browserUrls = new Map<string, string>()
 let popup: Window | null = null
-let browserStage: Stage = structuredClone(emptyStage)
+let browserStage: Stage = { ...emptyStage, fade: !desktop && localStorage.getItem(fadeKey) === 'true' }
 
 type BibleData = { books: Book[]; verses: BibleVerseRow[] }
 const verseSearches = new Map<string, Promise<ReturnType<typeof createVerseSearch>>>()
@@ -247,6 +248,7 @@ export async function controlPlayback(revision: number, action: PlaybackAction) 
       next.muted = action.muted
       break
     case 'fade':
+      localStorage.setItem(fadeKey, String(action.enabled))
       next.fade = action.enabled
       break
   }

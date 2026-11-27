@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Monitor, Music2, Video } from 'lucide-react'
+import { Monitor, Video } from 'lucide-react'
 import { useLanguage } from './i18n'
 import { reportPlayback } from './bridge'
 import { useSlideThemes } from './SlideThemes'
@@ -64,6 +64,8 @@ interface AudienceProps {
   background?: string
   output?: boolean
 }
+
+const equalizerHeights = [38, 58, 81, 64, 92, 72, 100, 83, 60, 77, 49, 32]
 
 const fadeDuration = 1000
 
@@ -237,9 +239,18 @@ export function Audience({ cue, stage, background, output = false }: AudiencePro
           {previewError && !output && <div className="slide-empty slide-overlay"><Video size={24} /><span>{t('Preview unavailable')}</span></div>}
         </>
       )}
-      {cue?.kind === 'audio' && (output
-        ? <audio {...mediaProps} src={cue.url} />
-        : <div className="slide-empty"><Music2 size={26} /><span>{cue.title}</span></div>)}
+      {cue?.kind === 'audio' && <>
+        {output && <audio {...mediaProps} src={cue.url} />}
+        {!blackout && <>
+          {backgroundImage}
+          <div className="audio-equalizer" role="img" aria-label={cue.title} title={cue.title}
+            data-playing={playing && !muted && volume > 0 && !stage?.error}>
+            {equalizerHeights.map((height, index) => (
+              <span key={index} style={{ height: `${height}%`, animationDelay: `${index * -0.19}s` }} />
+            ))}
+          </div>
+        </>}
+      </>}
       {blackout && <div className="slide-blackout">{backgroundImage}</div>}
     </div>
   )

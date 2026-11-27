@@ -106,6 +106,10 @@ impl Library {
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 project TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS playback_preferences (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                fade INTEGER NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS kiosk_background (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 name TEXT NOT NULL,
@@ -149,6 +153,27 @@ impl Library {
         self.db
             .lock()
             .map_err(|_| "The local library is unavailable.".into())
+    }
+
+    pub fn load_fade(&self) -> CommandResult<bool> {
+        let fade = self
+            .db()?
+            .query_row(
+                "SELECT fade FROM playback_preferences WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(message)?;
+        Ok(fade.unwrap_or(false))
+    }
+
+    pub fn save_fade(&self, enabled: bool) -> CommandResult<()> {
+        self.db()?.execute(
+            "INSERT INTO playback_preferences (id, fade) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET fade = excluded.fade",
+            [enabled],
+        ).map_err(message)?;
+        Ok(())
     }
 
     fn open_bible(&self, translation: &str) -> CommandResult<Connection> {

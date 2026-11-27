@@ -202,7 +202,7 @@ export function Preview(props: PreviewProps) {
       <section className="preview-panel preview-panel--next" aria-labelledby="next-heading">
         <CueDropScreen target="next" active={props.dropTarget === 'next'} prompt={t(props.browserDrag ? 'Drop to preview' : 'Drop to queue')}>
           <h2 id="next-heading" className="preview-label">{t('Preview')}</h2>
-          <Audience key={props.next?.id ?? 'empty'} cue={props.next} />
+          <Audience key={props.next?.id ?? 'empty'} cue={props.next} background={props.next?.kind === 'audio' ? props.background : undefined} />
           {props.nextError && <div className="slide-empty slide-overlay" role="status">{translateError(t, props.nextError)}</div>}
         </CueDropScreen>
       </section>

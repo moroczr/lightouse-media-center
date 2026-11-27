@@ -28,7 +28,7 @@ export function KioskBackgroundEditor({ background, loadError }: {
 
   return (
     <div className="editor">
-      <p>{t('This image appears when there’s no live cue or Blackout is active.')}</p>
+      <p>{t('This image appears behind audio cues, when there’s no live cue, and during Blackout.')}</p>
       <div className="kiosk-background-preview">
         {background ? <img src={background.url} alt={t('Current Kiosk background')} /> : <span>{t('No background image')}</span>}
       </div>

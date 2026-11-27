@@ -3,6 +3,8 @@ import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import Kiosk from '../src/kiosk/Kiosk'
+import { Audience } from '../src/shared/Audience'
+import { Preview } from '../src/studio/Preview'
 import * as bridge from '../src/shared/bridge'
 import { LanguageProvider } from '../src/shared/i18n'
 import { builtInSlideDefaults, emptyStage, type AudienceTextCue, type BackgroundImage, type Stage } from '../src/shared/model'
@@ -129,6 +131,52 @@ it('keeps a background removal received while the saved image is loading', async
   await act(async () => { await bridge.saveKioskBackground(null) })
   await act(async () => snapshot.resolve({ name: 'Old image', url: '/old.png' }))
   expect(container.querySelector('.audience-background')).toBeNull()
+})
+
+it('shows the audio background and equalizer in Studio and Kiosk while keeping playback in Kiosk', async () => {
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+  const cue = { id: 'song', kind: 'audio', title: 'Song', url: '/song.mp3' } as const
+  const show = (stage: Stage, background?: string) => render(<>
+    <Preview stage={stage} next={cue} standby={null} background={background} nextError="" kiosk busy={false}
+      dropTarget={null} browserDrag={false} onBlackout={vi.fn()} onNavigateVerse={vi.fn()} onPlayback={vi.fn()} />
+    <Audience stage={stage} cue={cue} background={background} output />
+  </>)
+  const stage = { ...emptyStage, cue, playing: true }
+  await show(stage, '/first.jpg')
+  const outputs = ['.preview-panel--live', '.preview-panel--next', '.audience--output']
+  for (const selector of outputs) {
+    expect(container.querySelector(selector + ' .audience-background')?.getAttribute('src')).toBe('/first.jpg')
+    expect(container.querySelector(selector + ' .audio-equalizer')?.getAttribute('data-playing'))
+      .toBe(String(selector !== '.preview-panel--next'))
+  }
+  const audio = container.querySelector('.audience--output audio')
+  expect(audio).toBeTruthy()
+  expect(container.querySelectorAll('audio')).toHaveLength(1)
+
+  await show({ ...stage, playing: false }, '/second.jpg')
+  expect(container.querySelector('.audio-equalizer[data-playing="true"]')).toBeNull()
+  await show({ ...stage, blackout: true }, '/second.jpg')
+  for (const selector of ['.preview-panel--live', '.audience--output']) {
+    expect(container.querySelector(selector + ' .audio-equalizer')).toBeNull()
+    expect(container.querySelector(selector + ' .slide-blackout img')?.getAttribute('src')).toBe('/second.jpg')
+  }
+  expect(container.querySelector('audio')).toBe(audio)
+  await show(stage)
+  expect(container.querySelector('.audience-background')).toBeNull()
+  expect(container.querySelector('.audience--output .audio-equalizer[data-playing="true"]')).toBeTruthy()
+})
+
+it('restores the last Fade setting in a fresh browser session', async () => {
+  vi.stubGlobal('BroadcastChannel', class { postMessage() {} })
+  vi.resetModules()
+  let session = await import('../src/shared/bridge')
+  for (const enabled of [true, false]) {
+    await session.controlPlayback(0, { kind: 'fade', enabled })
+    vi.resetModules()
+    session = await import('../src/shared/bridge')
+    expect(await session.getStage()).toMatchObject({ fade: enabled, cue: null, playing: false })
+  }
 })
 
 it('fades Kiosk audio for mute and transport while preserving the selected volume', async () => {

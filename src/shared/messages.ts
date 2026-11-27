@@ -95,7 +95,7 @@ const hungarian = {
   'Video': 'Videó',
   'Audio': 'Hang',
   'Nested playlist': 'Beágyazott lejátszási lista',
-  'This image appears when there’s no live cue or Blackout is active.': 'Ez a kép akkor jelenik meg, amikor nincs vetített műsorelem, vagy be van kapcsolva az elsötétítés.',
+  'This image appears behind audio cues, when there’s no live cue, and during Blackout.': 'Ez a kép a hanganyagok háttereként, vetített műsorelem hiányában és elsötétítéskor jelenik meg.',
   'Current Kiosk background': 'A vetítő jelenlegi háttérképe',
   'No background image': 'Nincs háttérkép',
   'Remove image': 'Kép eltávolítása',

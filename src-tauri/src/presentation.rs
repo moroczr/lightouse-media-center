@@ -1,4 +1,4 @@
-use crate::library::studio_only;
+use crate::library::{studio_only, Library};
 use serde::{Deserialize, Serialize};
 use std::sync::{Mutex, MutexGuard};
 use tauri::webview::Color;
@@ -9,7 +9,6 @@ use tauri::{
 
 type CommandResult<T> = Result<T, String>;
 
-#[derive(Default)]
 pub struct Presentation(Mutex<Stage>);
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -134,6 +133,13 @@ fn message(error: impl std::fmt::Display) -> String {
 }
 
 impl Presentation {
+    pub fn new(fade: bool) -> Self {
+        Self(Mutex::new(Stage {
+            fade,
+            ..Stage::default()
+        }))
+    }
+
     fn stage(&self) -> CommandResult<MutexGuard<'_, Stage>> {
         self.0
             .lock()
@@ -143,10 +149,10 @@ impl Presentation {
     fn update(
         &self,
         app: &AppHandle,
-        mutate: impl FnOnce(&mut Stage) -> bool,
+        mutate: impl FnOnce(&mut Stage) -> CommandResult<bool>,
     ) -> CommandResult<Stage> {
         let mut stage = self.stage()?;
-        if mutate(&mut stage) {
+        if mutate(&mut stage)? {
             app.emit("stage-updated", &*stage).map_err(message)?;
         }
         Ok(stage.clone())
@@ -391,7 +397,7 @@ pub fn window_event(window: &Window, event: &WindowEvent) {
                 let _ = presentation.update(app, |stage| {
                     let playing = stage.playing;
                     stage.playing = false;
-                    playing
+                    Ok(playing)
                 });
             }
         }
@@ -415,7 +421,7 @@ pub fn present(
     studio_only(&window)?;
     presentation.update(&app, |stage| {
         if expected_revision.is_some_and(|revision| revision != stage.revision) {
-            return false;
+            return Ok(false);
         }
         *stage = Stage {
             revision: stage.revision + 1,
@@ -427,7 +433,7 @@ pub fn present(
             fade: stage.fade,
             ..Stage::default()
         };
-        true
+        Ok(true)
     })
 }
 
@@ -441,7 +447,7 @@ pub fn set_blackout(
     studio_only(&window)?;
     presentation.update(&app, |stage| {
         stage.blackout = blackout;
-        true
+        Ok(true)
     })
 }
 
@@ -452,27 +458,29 @@ pub fn control_playback(
     presentation: State<'_, Presentation>,
     revision: u64,
     action: PlaybackAction,
+    library: State<'_, Library>,
 ) -> CommandResult<Stage> {
     studio_only(&window)?;
     presentation.update(&app, |stage| {
         let seek = match action {
             PlaybackAction::Volume { volume } => {
                 stage.volume = volume.clamp(0.0, 1.0);
-                return true;
+                return Ok(true);
             }
             PlaybackAction::Mute { muted } => {
                 stage.muted = muted;
-                return true;
+                return Ok(true);
             }
             PlaybackAction::Fade { enabled } => {
+                library.save_fade(enabled)?;
                 stage.fade = enabled;
-                return true;
+                return Ok(true);
             }
             _ if stage.revision != revision || !stage.cue.as_ref().is_some_and(Cue::is_media) => {
-                return false;
+                return Ok(false);
             }
             PlaybackAction::Seek { .. } | PlaybackAction::Skip { .. } if stage.duration <= 0.0 => {
-                return false;
+                return Ok(false);
             }
             PlaybackAction::Play => {
                 stage.playing = true;
@@ -498,7 +506,7 @@ pub fn control_playback(
                 position: stage.position,
             });
         }
-        true
+        Ok(true)
     })
 }
 
@@ -519,7 +527,7 @@ pub fn report_playback(
             || stage.playback_revision != playback_revision
             || !stage.cue.as_ref().is_some_and(Cue::is_media)
         {
-            return false;
+            return Ok(false);
         }
         stage.position = report.position.max(0.0);
         stage.duration = report.duration.max(0.0);
@@ -529,7 +537,27 @@ pub fn report_playback(
         if report.error.is_some() {
             stage.error = report.error;
         }
-        true
+        Ok(true)
     })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn restores_fade_on_startup_without_restoring_playback() {
+        let dir = tempfile::tempdir().unwrap();
+        let open = || Library::open(dir.path(), dir.path().join("bible-db")).unwrap();
+        assert!(!open().load_fade().unwrap());
+        for enabled in [true, false] {
+            open().save_fade(enabled).unwrap();
+            let session = Presentation::new(open().load_fade().unwrap());
+            let stage = session.stage().unwrap();
+            assert_eq!(stage.fade, enabled);
+            assert!(!stage.playing);
+            assert!(stage.cue.is_none());
+        }
+    }
 }
