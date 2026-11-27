@@ -173,7 +173,7 @@ const hungarian = {
   'Reference': 'Igehely',
   'Search by': 'Keresés módja',
   'e.g. love your enemies': 'pl. szeressétek ellenségeiteket',
-  'e.g. {book} 2:24': 'pl. {book} 2:24',
+  'e.g. Rome 10:9': 'pl. Róma 10:9',
   'Translation': 'Bibliafordítás',
   'Choose a translation': 'Válassz bibliafordítást',
   'No enabled translations': 'Nincs engedélyezett bibliafordítás',

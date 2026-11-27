@@ -278,16 +278,23 @@ it.each(['List view', 'Mosaic view'])('opens slide sets and presents the chosen 
   const live = () => container.querySelector('.preview-panel--live .slide-text')?.textContent
   await click(button('Slides'))
   await click(row('Songs'))
+  expect(row('Morning song')).toBeNull()
+  await click(row('Songs'), 2)
+  await click(row('Songs'), 2, 'dblclick')
   await click(panel.querySelector<HTMLButtonElement>(`button[aria-label="${view}"]`)!)
   await act(async () => row('Morning song').focus())
   expect(await press(document.activeElement!, ' ')).toBe(false)
   expect((await bridge.getStage()).cue).toBeNull()
   await click(row('Morning song'))
+  expect(panel.querySelector('[aria-current="location"]')?.textContent).toBe('Songs')
+  expect(row('First verse')).toBeNull()
+  await click(row('Morning song'), 2)
+  await click(row('Morning song'), 2, 'dblclick')
   expect(panel.querySelector('[aria-current="location"]')?.textContent).toBe('Morning song')
   expect(Array.from(panel.querySelectorAll('.text-library-row-main strong'), el => el.textContent))
     .toEqual(['First verse', 'Second verse', 'Final verse'])
 
-  // The second click of a double-click on the set may land on a newly rendered row.
+  // An extra click in the same sequence must never activate a newly rendered row.
   await click(row('First verse'), 2)
   await click(row('First verse'), 2, 'dblclick')
   expect((await bridge.getStage()).cue).toBeNull()

@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import * as bridge from '../src/shared/bridge'
 import { LanguageProvider } from '../src/shared/i18n'
+import { writeLanguage } from '../src/shared/messages'
 import type { LibraryTextSlide, MediaFile } from '../src/shared/model'
 import { SlideThemesProvider } from '../src/shared/SlideThemes'
 import { MediaBrowser } from '../src/studio/MediaBrowser'
@@ -28,6 +29,7 @@ afterEach(async () => {
   container.remove()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  localStorage.clear()
 })
 
 async function render(panel: ReactNode) {
@@ -40,6 +42,10 @@ async function press(key: string, modifiers: KeyboardEventInit = {}) {
   const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...modifiers })
   await act(async () => { document.activeElement!.dispatchEvent(event) })
   return event.defaultPrevented
+}
+
+async function clickResult(button: HTMLButtonElement, detail: number, type = 'click') {
+  await act(async () => { button.dispatchEvent(new MouseEvent(type, { detail, bubbles: true })) })
 }
 
 it('leaves focus in an empty search and picks a single media result only on Enter', async () => {
@@ -111,7 +117,14 @@ it('sends the arrow-selected media file live with Space or Ctrl+Enter', async ()
   const preview = vi.fn()
   await render(<MediaBrowser sources={[source]} filter="all" onFilterChange={vi.fn()} view="list"
     onViewChange={vi.fn()} busy={false} onPreview={preview} onLive={live} />)
-  await act(async () => container.querySelector<HTMLButtonElement>('.media-result')!.click())
+  const folder = container.querySelector<HTMLButtonElement>('.media-result')!
+  await clickResult(folder, 1)
+  expect(document.activeElement).toBe(folder)
+  expect(folder.hasAttribute('data-selected')).toBe(true)
+  expect(bridge.listMedia).not.toHaveBeenCalled()
+  await clickResult(folder, 2)
+  expect(bridge.listMedia).not.toHaveBeenCalled()
+  await clickResult(folder, 2, 'dblclick')
   expect(document.activeElement).toBe(container.querySelector('input[type="search"]'))
   await press('ArrowDown')
   expect(document.activeElement?.textContent).toContain(file.name)
@@ -207,19 +220,21 @@ it.each(['list', 'grid'] as const)('browses books and chapters before presenting
   await render(<ScriptureEditor active settingsRevision={0} busy={false}
     view={view} onViewChange={vi.fn()} onPreview={preview} onLive={live} />)
   const rows = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>(`ul[aria-label="${label}"] [data-result-button]`))
-  const click = async (button: HTMLButtonElement, detail: number, type = 'click') => {
-    await act(async () => { button.dispatchEvent(new MouseEvent(type, { detail, bubbles: true })) })
-  }
 
   const input = container.querySelector<HTMLInputElement>('.search-box input')!
   await act(async () => input.focus())
   expect(await press('ArrowDown')).toBe(true)
   expect(document.activeElement).toBe(rows('Bible books')[0])
-  await click(rows('Bible books')[0], 1)
+  const bookRow = rows('Bible books')[0]
+  await clickResult(bookRow, 1)
+  expect(document.activeElement).toBe(bookRow)
+  expect(rows('Chapters')).toHaveLength(0)
+  await clickResult(bookRow, 2)
+  await clickResult(bookRow, 2, 'dblclick')
   expect(document.activeElement).toBe(input)
   expect(await press('ArrowDown')).toBe(true)
   expect(document.activeElement).toBe(rows('Chapters')[0])
-  await click(rows('Chapters')[0], 2)
+  await clickResult(rows('Chapters')[0], 1)
   expect(rows('Chapters')).toHaveLength(2)
   await act(async () => rows('Chapters')[0].focus())
   if (view === 'grid') {
@@ -228,18 +243,22 @@ it.each(['list', 'grid'] as const)('browses books and chapters before presenting
   }
   await press(view === 'grid' ? 'ArrowRight' : 'ArrowDown')
   expect(document.activeElement).toBe(rows('Chapters')[1])
-  await click(rows('Chapters')[1], 1)
+  const chapter = rows('Chapters')[1]
+  await clickResult(chapter, 1)
+  expect(rows('Verses')).toHaveLength(0)
+  await clickResult(chapter, 2)
+  await clickResult(chapter, 2, 'dblclick')
   expect(document.activeElement).toBe(input)
   expect(await press('ArrowDown')).toBe(true)
   expect(document.activeElement).toBe(rows('Verses')[0])
-  await click(rows('Verses')[0], 2)
-  await click(rows('Verses')[0], 2, 'dblclick')
+  await clickResult(rows('Verses')[0], 2)
+  await clickResult(rows('Verses')[0], 2, 'dblclick')
   expect(live).not.toHaveBeenCalled()
   const verse = rows('Verses')[1]
-  await click(verse, 1)
+  await clickResult(verse, 1)
   expect(preview).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Genesis 2:2' }))
-  await click(verse, 2)
-  await click(verse, 2, 'dblclick')
+  await clickResult(verse, 2)
+  await clickResult(verse, 2, 'dblclick')
   expect(live).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ title: 'Genesis 2:2' }))
 })
 
@@ -423,3 +442,28 @@ it.each(['keep the query', 'edit the query', 'move focus'])(
     expect(document.activeElement).toBe(expected)
   },
 )
+
+it.each([
+  { language: 'en', placeholder: 'e.g. Rome 10:9', reference: 'Rome 10:9' },
+  { language: 'hu', placeholder: 'pl. Róma 10:9', reference: 'Róma 10:9' },
+] as const)('accepts the displayed $language Bible reference example as typed', async ({ language, placeholder, reference }) => {
+  writeLanguage(language)
+  vi.spyOn(bridge.bible, 'settings').mockResolvedValue({
+    defaultId: 'test', databases: [{ id: 'test', name: 'Test', enabled: true, fileName: null }],
+  })
+  vi.spyOn(bridge.bible, 'books').mockResolvedValue([{ id: 'ROM', name: 'Romans', chapters: 16 }])
+  vi.spyOn(bridge.bible, 'verses').mockResolvedValue(
+    Array.from({ length: 21 }, (_, i) => ({ verse: i + 1, text: `Verse ${i + 1}` })),
+  )
+  await render(<ScriptureEditor active settingsRevision={0} busy={false} view="list" onViewChange={vi.fn()} />)
+  const input = container.querySelector<HTMLInputElement>('[role="combobox"]')!
+  expect(input.placeholder).toBe(placeholder)
+  await act(async () => input.focus())
+  for (const character of reference) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, input.value + character)
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: character }))
+    })
+  }
+  expect(container.querySelector('.verse-result strong')?.textContent).toBe('Romans 10:9')
+})

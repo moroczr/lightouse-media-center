@@ -11,6 +11,10 @@ const abbreviations: Readonly<Record<string, string>> = {
   JAM: 'jas',
 }
 
+const referenceAliases: Readonly<Record<string, readonly string[]>> = {
+  ROM: ['Rome', 'Róma'],
+}
+
 // The book must contain a letter so the leading number in "1 Peter" stays with the book.
 const referencePattern = /^((?:[1-5]\.?)?\s*\p{L}[\p{L}\p{M}\d\s.'’-]*?)\s*(\d+)(?:\s*:\s*(.*))?$/u
 
@@ -19,7 +23,8 @@ export function normalizeBook(value: string) {
 }
 
 function bookNames(book: Book) {
-  return [book.name, book.abbreviation, book.alternateName].flatMap(name => name ? [normalizeBook(name)] : [])
+  return [book.name, book.abbreviation, book.alternateName, ...(referenceAliases[book.id] ?? [])]
+    .flatMap(name => name ? [normalizeBook(name)] : [])
 }
 
 function isExactBook(book: Book, input: string) {

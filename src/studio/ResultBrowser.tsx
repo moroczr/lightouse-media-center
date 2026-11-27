@@ -142,15 +142,21 @@ export function ResultBrowser({ browser, variant = 'catalog', className = '', la
               aria-keyshortcuts={live && !disabled ? 'Space Control+Enter' : undefined}
               onPointerDown={startDrag}
               onClick={event => {
-                // Opening a folder may replace the button under the pointer between clicks.
+                // Extra clicks in the same sequence may land on a new row after opening a folder.
                 if (event.detail > 1 && firstClick.current !== event.currentTarget) return
                 firstClick.current = event.currentTarget
-                if (item.open) item.open()
-                else if (document.activeElement !== event.currentTarget) event.currentTarget.focus({ preventScroll: true })
+                if (item.open && event.detail === 0) {
+                  // Keyboard and assistive technology activate the native button with a zero-detail click.
+                  item.open()
+                  return
+                }
+                if (document.activeElement !== event.currentTarget) event.currentTarget.focus({ preventScroll: true })
                 else if (!selected) item.select()
               }}
               onDoubleClick={event => {
-                if (!disabled && firstClick.current === event.currentTarget) live?.()
+                if (firstClick.current !== event.currentTarget) return
+                if (item.open) item.open()
+                else if (!disabled) live?.()
               }}>
               {item.icon}
               {passage ? text : <span className="media-result-text">{text}</span>}

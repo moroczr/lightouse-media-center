@@ -104,7 +104,6 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
   const openBook = !filtering ? bookValues?.find(book => book.id === location?.bookId) : undefined
   const openChapter = openBook && location?.chapter && location.chapter <= openBook.chapters ? location.chapter : undefined
   const openChapterLabel = openChapter === undefined ? '' : t('Chapter {number}', { number: openChapter })
-  const referenceExample = bookValues?.find(book => book.id === '1PE')?.name ?? '1 Peter'
   const reference = useMemo(
     () => lookupReference(text, bookValues ?? []),
     [text, bookValues],
@@ -520,7 +519,7 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
                 if (element) element.autofocus = true
               }}
               disabled={!loadingSettings && !translation} autoComplete="off" spellCheck={false} maxLength={byText ? 200 : 80}
-              value={byText ? query : text} placeholder={byText ? t('e.g. love your enemies') : t('e.g. {book} 2:24', { book: referenceExample })}
+              value={byText ? query : text} placeholder={byText ? t('e.g. love your enemies') : t('e.g. Rome 10:9')}
               onFocus={() => setFocused(true)} onBlur={() => { browser.cancelPendingFocus(); setFocused(false); setActiveIndex(-1) }}
               onChange={changeSearch} onKeyDown={searchKeys} />
             {filtering && <button type="button" className="icon-button scripture-clear" aria-label={t('Clear search')}
