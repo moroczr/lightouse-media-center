@@ -429,3 +429,47 @@ it.each(['workspace', 'cue-picker'])('highlights the selection and starts at the
     expect(second.hasAttribute('data-selected')).toBe(false)
   }
 })
+
+it('manages individual downloads and keeps the available translations and default in sync', async () => {
+  const one = { id: 'One', name: 'First translation.sqlite3', enabled: true, fileName: 'One.sqlite3' }
+  const two = { id: 'Two', name: 'Second translation', enabled: true, fileName: 'Two.sqlite3' }
+  const initial = { databases: [one], defaultId: one.id }
+  vi.spyOn(bridge.bible, 'settings').mockResolvedValue(initial)
+  const catalog = vi.spyOn(bridge.bible, 'catalog').mockResolvedValue({
+    revision: 'pinned-commit', translations: [one, two].map(edition => ({
+      ...edition, language: 'en', collection: 'Complete Bible', source: null, books: 66, verses: 31102, bytes: 2048,
+    })),
+  })
+  vi.spyOn(bridge.bible, 'onDownloadProgress').mockResolvedValue(() => {})
+  const download = vi.spyOn(bridge.bible, 'download')
+    .mockRejectedValueOnce(new Error('Connection interrupted'))
+    .mockResolvedValue({ databases: [one, two], defaultId: one.id })
+  const remove = vi.spyOn(bridge.bible, 'remove').mockResolvedValue({ databases: [two], defaultId: two.id })
+  await openStudio()
+  vi.spyOn(bridge, 'desktop', 'get').mockReturnValue(true)
+  await openDialog('Settings')
+  const click = (label: string) => act(async () => button(label).click())
+  await click('Bible')
+  const available = document.getElementById('bible-settings-panel-available')!
+  expect(available.hidden).toBe(false)
+  expect(available.textContent).toContain('First translation')
+  expect(available.textContent).not.toMatch(/database|sqlite|shared folder/i)
+  expect(catalog).not.toHaveBeenCalled()
+
+  await click('Download translations')
+  expect(available.hidden).toBe(true)
+  expect(button('Remove First translation').closest('li')?.textContent).toContain('Downloaded')
+  await click('Download Second translation')
+  expect(container.querySelector('[role="alert"]')?.textContent).toBe('Download failed.')
+  await click('Download Second translation')
+  expect(download).toHaveBeenCalledWith('pinned-commit', 'Two')
+  expect(button('Remove Second translation').closest('li')?.textContent).toContain('Downloaded')
+  await click('Remove First translation')
+  expect(remove).toHaveBeenCalledWith('One')
+  expect(button('Download First translation').closest('li')?.textContent).not.toContain('Downloaded')
+
+  await click('Available translations')
+  expect(available.querySelectorAll('input:checked')).toHaveLength(1)
+  expect(available.querySelector('select')?.value).toBe('Two')
+  expect(available.textContent).not.toContain('First translation')
+})

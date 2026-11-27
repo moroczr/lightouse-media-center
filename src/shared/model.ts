@@ -48,6 +48,10 @@ export interface Translation {
   name: string
 }
 
+export function translationName({ name, id }: Translation) {
+  return name.replace(/\.(?:sqlite3?|db)$/i, '').trim() || id
+}
+
 export interface BibleDatabase extends Translation {
   fileName: string | null
   enabled: boolean
@@ -61,6 +65,26 @@ export interface BiblePreferences {
 export interface BibleSettings {
   databases: BibleDatabase[]
   defaultId: string | null
+}
+
+export interface CatalogEdition extends Translation {
+  language: string
+  collection: string | null
+  source: string | null
+  books: number
+  verses: number
+  bytes: number
+}
+
+export interface BibleCatalog {
+  revision: string
+  translations: CatalogEdition[]
+}
+
+export interface BibleDownloadProgress {
+  id: string
+  received: number
+  total: number
 }
 
 export interface Verse {

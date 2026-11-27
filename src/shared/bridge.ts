@@ -1,9 +1,8 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { addBrowserSlideBackground, loadBrowserSlideSettings, saveBrowserDefaultSlideTheme } from './browserSlideSettings'
-import { browserBibleSettings, importBrowserBible, loadBrowserBible, saveBrowserBibleSettings } from './browserBible'
 import {
-  type AudienceCue, type AudienceTextCue, type BiblePreferences, type BibleSettings, type Book, type Cue, type Display, type Group, type BackgroundImage, type MediaFile, type PlaybackAction, type Project,
+  type AudienceCue, type AudienceTextCue, type BibleCatalog, type BibleDownloadProgress, type BiblePreferences, type BibleSettings, type Book, type Cue, type Display, type Group, type BackgroundImage, type MediaFile, type PlaybackAction, type Project,
   type Reference, type SavedProject, type SlideKind, type SlideSettings, type Source, type Stage, type TextCue, type Theme, type Verse, emptyStage, isMedia, normalizeProject,
 } from './model'
 import { formatScriptureCue, readAdjacentVerses, verseLabel } from './scripture'
@@ -35,7 +34,7 @@ const verseSearches = new Map<string, Promise<ReturnType<typeof createVerseSearc
 function loadVerseSearch(translation: string) {
   let request = verseSearches.get(translation)
   if (!request) {
-    const data = desktop ? invoke<BibleData>('bible_search_data', { translation }) : loadBrowserBible(translation)
+    const data = invoke<BibleData>('bible_search_data', { translation })
     request = data.then(({ books, verses }) => createVerseSearch(books, verses))
     verseSearches.set(translation, request)
     void request.catch(() => verseSearches.delete(translation))
@@ -45,24 +44,23 @@ function loadVerseSearch(translation: string) {
 
 export const bible = {
   search: async (translation: string, query: string) => (await loadVerseSearch(translation))(query),
-  settings: async () => desktop ? invoke<BibleSettings>('load_bible_settings') : browserBibleSettings(),
-  saveSettings: async (preferences: BiblePreferences) => desktop
-    ? invoke<BibleSettings>('save_bible_settings', { preferences })
-    : saveBrowserBibleSettings(preferences),
-  importFile: async () => {
-    if (desktop) return invoke<BibleSettings | null>('import_bible', dialogLabels('Add a Bible database', 'Bible databases'))
-    const [file] = await fileInput('.json')
-    return file ? importBrowserBible(file) : null
+  settings: async () => desktop ? invoke<BibleSettings>('load_bible_settings') : { databases: [], defaultId: null },
+  saveSettings: (preferences: BiblePreferences) => invoke<BibleSettings>('save_bible_settings', { preferences }),
+  catalog: () => invoke<BibleCatalog>('fetch_bible_catalog'),
+  download: async (revision: string, id: string) => {
+    const settings = await invoke<BibleSettings>('download_bible', { revision, id })
+    verseSearches.delete(id)
+    return settings
   },
-  books: async (translation: string) => desktop
-    ? invoke<Book[]>('books', { translation })
-    : (await loadBrowserBible(translation)).books,
-  verses: async (translation: string, book: string, chapter: number) => desktop
-    ? invoke<Verse[]>('verses', { translation, book, chapter })
-    : (await loadBrowserBible(translation)).verses
-      .filter(row => row[0] === book && row[1] === chapter)
-      .map(row => ({ verse: row[2], text: row[3] }))
-      .sort((a, b) => a.verse - b.verse),
+  onDownloadProgress: (callback: (progress: BibleDownloadProgress) => void) =>
+    listen<BibleDownloadProgress>('bible-download-progress', event => callback(event.payload)),
+  remove: async (id: string) => {
+    const settings = await invoke<BibleSettings>('remove_bible', { id })
+    verseSearches.delete(id)
+    return settings
+  },
+  books: (translation: string) => invoke<Book[]>('books', { translation }),
+  verses: (translation: string, book: string, chapter: number) => invoke<Verse[]>('verses', { translation, book, chapter }),
 }
 
 export async function adjacentVerses({ translation, book, chapter, verse }: Reference) {

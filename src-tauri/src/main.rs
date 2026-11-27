@@ -12,7 +12,8 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let directory = app.path().app_data_dir()?;
-            app.manage(Library::open(&directory)?);
+            let bibles = app.path().home_dir()?.join(".verse-database");
+            app.manage(Library::open(&directory, bibles)?);
             app.manage(Presentation::default());
             Ok(())
         })
@@ -29,6 +30,9 @@ fn main() {
             library::bible_settings::load_bible_settings,
             library::bible_settings::save_bible_settings,
             library::bible_settings::import_bible,
+            library::bible_downloads::fetch_bible_catalog,
+            library::bible_downloads::download_bible,
+            library::bible_settings::remove_bible,
             library::books,
             library::verses,
             library::bible_search_data,

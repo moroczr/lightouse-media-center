@@ -139,7 +139,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
   const [persistedSlideLibraries, setPersistedSlideLibraries] = useState<string[]>()
   const active = project.playlists.find(list => list.id === project.activeId) ?? project.playlists[0]
   const [cueId, setCueId] = useState<string | null>(() => {
-    if (!saved) return desktop ? welcomePreview.id : 'opening-scripture'
+    if (!saved) return welcomePreview.id
     return flatten(active.children)[0]?.id ?? null
   })
   const [displayList, setDisplayList] = useState<Display[]>([])

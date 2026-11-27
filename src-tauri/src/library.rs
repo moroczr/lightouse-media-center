@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -10,6 +10,8 @@ use std::sync::{Mutex, MutexGuard};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
+#[path = "bible_downloads.rs"]
+pub(crate) mod bible_downloads;
 #[path = "bible_settings.rs"]
 pub(crate) mod bible_settings;
 #[path = "slide_settings.rs"]
@@ -20,21 +22,6 @@ const AUDIO: &[&str] = &["mp3", "m4a", "aac", "wav", "ogg", "oga", "flac", "opus
 const BACKGROUND_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp"];
 const MAX_BACKGROUND_SIZE: usize = 10 * 1024 * 1024;
 const BIBLE_SCHEMA: &str = include_str!("../bible/schema.sql");
-const BIBLES: &[(&str, &str, &str, &str)] = &[
-    (
-        "WEBP",
-        "World English Bible",
-        "engwebp",
-        include_str!("../../public/bible-WEBP.json"),
-    ),
-    (
-        "WEBPB",
-        "World English Bible (British)",
-        "engwebpb",
-        include_str!("../../public/bible-WEBPB.json"),
-    ),
-];
-
 type CommandResult<T> = Result<T, String>;
 
 pub struct Library {
@@ -107,9 +94,12 @@ fn message(error: impl std::fmt::Display) -> String {
 }
 
 impl Library {
-    pub fn open(directory: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn open(
+        directory: &Path,
+        bible_directory: PathBuf,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         fs::create_dir_all(directory)?;
-        let db = Connection::open(directory.join("lighthouse.sqlite3"))?;
+        let mut db = Connection::open(directory.join("lighthouse.sqlite3"))?;
         db.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS workspace (
@@ -126,49 +116,13 @@ impl Library {
         )?;
         bible_settings::initialize(&db)?;
         slide_settings::initialize(&db)?;
-        let bible_directory = directory.join("bibles");
         fs::create_dir_all(&bible_directory)?;
-        for (id, name, source_id, source) in BIBLES {
-            let mut bible = Connection::open(bible_directory.join(format!("{id}.sqlite3")))?;
-            Self::seed_bible(&mut bible, id, name, source_id, source)?;
-        }
+        bible_settings::migrate_legacy(&mut db, &directory.join("bibles"), &bible_directory)?;
         Ok(Self {
             db: Mutex::new(db),
             bible_directory,
             picks: Mutex::new(Picks::default()),
         })
-    }
-
-    fn seed_bible(
-        db: &mut Connection,
-        id: &str,
-        name: &str,
-        source_id: &str,
-        source: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        db.pragma_update(None, "foreign_keys", "ON")?;
-        let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        transaction.execute_batch(BIBLE_SCHEMA)?;
-        let exists: bool = transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM translations WHERE id = ?1)",
-            [id],
-            |row| row.get(0),
-        )?;
-        if !exists {
-            let data: BibleData = serde_json::from_str(source)?;
-            Self::store_bible(&transaction, id, name, data)?;
-            transaction.execute(
-                "INSERT INTO translation_sources VALUES (?1, 'Complete Bible', ?2, '', ?3, '', '', ?4)",
-                params![
-                    id,
-                    format!("https://ebible.org/find/show.php?id={source_id}"),
-                    format!("public/bible-{id}.json"),
-                    "Bundled from the public-domain eBible.org verse-per-line distribution.",
-                ],
-            )?;
-        }
-        transaction.commit()?;
-        Ok(())
     }
 
     fn store_bible(db: &Connection, id: &str, name: &str, data: BibleData) -> rusqlite::Result<()> {
@@ -194,22 +148,23 @@ impl Library {
     fn db(&self) -> CommandResult<MutexGuard<'_, Connection>> {
         self.db
             .lock()
-            .map_err(|_| "The local database is unavailable.".into())
+            .map_err(|_| "The local library is unavailable.".into())
     }
 
     fn open_bible(&self, translation: &str) -> CommandResult<Connection> {
         if !valid_translation_id(translation) {
             return Err("Invalid Bible translation ID.".into());
         }
-        let local = self.bible_directory.join(format!("{translation}.sqlite3"));
-        let path = if local.is_file() {
-            local
-        } else {
-            let db = self.db()?;
-            bible_settings::imported_path(self, &db, translation)?.unwrap_or(local)
-        };
+        let path = match bible_settings::direct_bible_path(&self.bible_directory, translation)? {
+            Some(path) => Some(path),
+            None => {
+                let db = self.db()?;
+                bible_settings::imported_path(self, &db, translation)?
+            }
+        }
+        .ok_or_else(|| format!("Bible edition {translation} is not installed."))?;
         open_bible_file(&path)
-            .map_err(|error| format!("Could not open the Bible edition {translation}: {error}"))
+            .map_err(|_| "Could not read the Bible translation.".into())
     }
 
     fn picks(&self) -> CommandResult<MutexGuard<'_, Picks>> {

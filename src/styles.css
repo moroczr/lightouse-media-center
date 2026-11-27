@@ -462,7 +462,7 @@ button.icon-button:disabled { opacity: .35; }
 .dialog-header h2 { font-size: 20px; letter-spacing: -.025em; }
 .dialog-header .icon-button { min-height: 31px; min-width: 31px; background: transparent; border-color: transparent; }
 .editor { display: grid; gap: 14px; color: var(--ink); font-size: 13px; }
-.editor label:not(.search-box, .bible-database) { display: grid; gap: 6px; min-width: 0; font-size: 12px; font-weight: 780; }
+.editor label:not(.search-box, .translation-option) { display: grid; gap: 6px; min-width: 0; font-size: 12px; font-weight: 780; }
 .editor input:not([type="radio"], [type="checkbox"]), .editor textarea, .editor select {
   width: 100%; min-width: 0; min-height: 37px; color: var(--ink); background: var(--inset);
   border: 1px solid var(--border); border-radius: 7px; padding: 8px 9px; font-size: 13px; font-weight: 580;
@@ -509,23 +509,33 @@ button.icon-button:disabled { opacity: .35; }
 .settings-tabs button:hover { color: var(--ink); }
 .settings-tabs button[aria-selected="true"] { border-bottom-color: var(--accent); color: var(--accent); }
 .settings-actions { margin-top: 16px; }
-.bible-settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.bible-settings-heading h3 { margin: 0; font-size: 14px; font-weight: 800; }
-.bible-database-list {
-  list-style: none; margin: 0; padding: 0; max-height: min(240px, 35vh); overflow: auto;
+.bible-settings { gap: 0; }
+.bible-settings > .settings-tabs { border: 0; gap: 4px; }
+.bible-settings > .settings-tabs button { border: 0; border-radius: 6px; }
+.bible-settings > .settings-tabs button[aria-selected="true"] { background: var(--accent-surface); }
+.bible-downloads { display: grid; gap: 8px; }
+.refresh-catalog { justify-self: end; }
+.bible-downloads progress { display: block; width: 100%; accent-color: var(--accent); }
+.translation-list {
+  list-style: none; margin: 0; padding: 0; max-height: min(360px, 36vh); overflow: auto;
   border: 1px solid var(--border); border-radius: 8px; background: var(--sidebar);
 }
-.bible-database-list li + li { border-top: 1px solid var(--line); }
-.bible-settings .bible-database {
-  display: flex; align-items: center; gap: 11px; padding: 9px 11px; cursor: pointer;
+.translation-list li + li { border-top: 1px solid var(--line); }
+.translation-option, .translation-row {
+  display: flex; align-items: center; gap: 11px; padding: 9px 11px; overflow-wrap: anywhere;
 }
-.bible-database:hover { background: var(--raised); }
-.bible-settings .bible-database input[type="checkbox"] {
-  width: 16px; height: 16px; min-height: 0; margin: 0; flex: none; accent-color: var(--accent);
+.translation-option { cursor: pointer; }
+.translation-option:hover { background: var(--raised); }
+.translation-option input[type="checkbox"] {
+  width: 16px; height: 16px; margin: 0; flex: none; accent-color: var(--accent);
 }
-.bible-database-name { display: grid; gap: 2px; min-width: 0; }
-.bible-database-name small { color: var(--muted); font-size: 11px; font-weight: 620; }
-.bible-database-name > * { overflow-wrap: anywhere; }
+.translation-row { justify-content: space-between; }
+.translation-row .icon-button { flex: none; }
+.translation-details { display: grid; gap: 2px; min-width: 0; }
+.translation-details small { color: var(--muted); }
+.translation-downloaded { background: var(--accent-surface); }
+.translation-status { display: flex; align-items: center; gap: 4px; color: var(--accent); font-size: 11px; }
+.translation-list .settings-error { margin: 0; padding: 0 11px 9px; }
 .settings-error { color: var(--danger-text); overflow-wrap: anywhere; }
 .dialog-actions .button-primary .cue-shortcut { color: inherit; }
 .theme-swatch { display: block; flex: none; width: 31px; height: 21px; border: 1px solid #758fb599; border-radius: 4px; overflow: hidden; }

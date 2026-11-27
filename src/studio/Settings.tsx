@@ -1,16 +1,13 @@
 import { useEffect, useState } from 'react'
-import { BookOpen, Globe, Images, Plus } from 'lucide-react'
+import { BookOpen, Download, Globe, Images } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
-import { translateError, type Language } from '../shared/messages'
-import { bible } from '../shared/bridge'
-import type { BibleSettings } from '../shared/model'
+import type { Language, Message } from '../shared/messages'
+import { bible, desktop } from '../shared/bridge'
+import { translationName, type BibleSettings } from '../shared/model'
 import { Dialog } from './Editors'
+import { BibleDownloads } from './BibleDownloads'
 import { SlidesSettings } from './SlidesSettings'
 import { defineTabs, TabList } from './TabList'
-
-function errorMessage(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason)
-}
 
 const tabs = defineTabs('settings', [
   { id: 'general', label: 'General', icon: Globe },
@@ -18,6 +15,12 @@ const tabs = defineTabs('settings', [
   { id: 'slides', label: 'Slides', icon: Images },
 ])
 
+const bibleTabs = defineTabs('bible-settings', [
+  { id: 'available', label: 'Available translations', icon: BookOpen },
+  { id: 'download', label: 'Download translations', icon: Download },
+])
+
+type BibleTab = (typeof bibleTabs.options)[number]['id']
 type Tab = (typeof tabs.options)[number]['id']
 
 export function SettingsDialog({ onClose, onBibleChange }: { onClose: () => void; onBibleChange: () => void }) {
@@ -25,15 +28,17 @@ export function SettingsDialog({ onClose, onBibleChange }: { onClose: () => void
   const [tab, setTab] = useState<Tab>('general')
   const [settings, setSettings] = useState<BibleSettings>()
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [bibleTab, setBibleTab] = useState<BibleTab>('available')
+  const [visitedDownloads, setVisitedDownloads] = useState(false)
+  const [error, setError] = useState<Message>()
   const enabled = settings?.databases.filter(item => item.enabled) ?? []
 
   useEffect(() => {
     let active = true
     void bible.settings().then(data => {
       if (active) setSettings(data)
-    }).catch(reason => {
-      if (active) setError(errorMessage(reason))
+    }).catch(() => {
+      if (active) setError('Could not load Bible translations.')
     })
     return () => { active = false }
   }, [])
@@ -41,18 +46,20 @@ export function SettingsDialog({ onClose, onBibleChange }: { onClose: () => void
   async function update(operation: () => Promise<BibleSettings | null>) {
     if (busy) return
     setBusy(true)
-    setError('')
+    setError(undefined)
     try {
       const data = await operation()
-      if (data) {
-        setSettings(data)
-        onBibleChange()
-      }
-    } catch (reason) {
-      setError(errorMessage(reason))
+      if (data) applySettings(data)
+    } catch {
+      setError('Could not save translation settings.')
     } finally {
       setBusy(false)
     }
+  }
+
+  function applySettings(data: BibleSettings) {
+    setSettings(data)
+    onBibleChange()
   }
 
   function save(defaultId: string | null, toggledId?: string) {
@@ -79,39 +86,40 @@ export function SettingsDialog({ onClose, onBibleChange }: { onClose: () => void
       </section>
       <section {...tabs.panelProps('bible', tab)}>
         <div className="editor bible-settings">
-          <div className="bible-settings-heading">
-            <h3>{t('Bible databases')}</h3>
-            <button type="button" className="button" disabled={!settings || busy}
-              onClick={() => void update(() => bible.importFile())}>
-              <Plus size={16} /> {t('Add database')}
-            </button>
-          </div>
-
-          {settings ? <>
-            <ul className="bible-database-list" aria-label={t('Bible databases')}>
-              {settings.databases.map(database => (
-                <li key={database.id}>
-                  <label className="bible-database">
-                    <input type="checkbox" checked={database.enabled} disabled={busy}
-                      onChange={() => save(settings.defaultId, database.id)} />
-                    <span className="bible-database-name">
-                      <strong>{database.name}</strong>
-                      <small title={database.fileName ?? undefined}>{database.fileName ?? t('Bundled')}</small>
-                    </span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-            <label>{t('Default Bible database')}
-              <select value={settings.defaultId ?? ''} disabled={busy || !enabled.length}
-                onChange={event => save(event.target.value)}>
-                {!enabled.length && <option value="">{t('No databases enabled')}</option>}
-                {enabled.map(database => <option key={database.id} value={database.id}>{database.name}</option>)}
-              </select>
-            </label>
-          </> : !error && <p role="status">{t('Loading Bible databases…')}</p>}
-
-          {error && <p className="settings-error" role="alert">{translateError(t, error)}</p>}
+          <TabList tabs={bibleTabs} selected={bibleTab} label="Bible translations"
+            onChange={id => {
+              setBibleTab(id)
+              if (id === 'download') setVisitedDownloads(true)
+            }} />
+          <section {...bibleTabs.panelProps('available', bibleTab)}>
+            {desktop && settings && <div className="editor">
+              {settings.databases.length ? <ul className="translation-list" aria-label={t('Available translations')}>
+                {settings.databases.map(edition => (
+                  <li key={edition.id}>
+                    <label className="translation-option">
+                      <input type="checkbox" checked={edition.enabled} disabled={busy}
+                        onChange={() => save(settings.defaultId, edition.id)} />
+                      <strong>{translationName(edition)}</strong>
+                    </label>
+                  </li>
+                ))}
+              </ul> : <p>{t('No translations downloaded yet.')}</p>}
+              <label>{t('Default Bible translation')}
+                <select value={settings.defaultId ?? ''} disabled={busy || !enabled.length}
+                  onChange={event => save(event.target.value)}>
+                  {!enabled.length && <option value="">{t('No translations enabled')}</option>}
+                  {enabled.map(edition => <option key={edition.id} value={edition.id}>{translationName(edition)}</option>)}
+                </select>
+              </label>
+            </div>}
+          </section>
+          <section {...bibleTabs.panelProps('download', bibleTab)}>
+            {desktop && settings && visitedDownloads &&
+              <BibleDownloads settings={settings} busy={busy} onBusyChange={setBusy} onChange={applySettings} />}
+          </section>
+          {!desktop && <p>{t('Bible translations are available in the desktop app.')}</p>}
+          {desktop && !settings && !error && <p role="status">{t('Loading Bible translations…')}</p>}
+          {error && <p className="settings-error" role="alert">{t(error)}</p>}
         </div>
       </section>
       <section {...tabs.panelProps('slides', tab)}>

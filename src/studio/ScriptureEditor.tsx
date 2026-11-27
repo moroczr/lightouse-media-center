@@ -2,8 +2,8 @@ import { useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, us
 import { BookOpen, ChevronDown, ChevronRight, ChevronUp, Folder, Search, X } from 'lucide-react'
 import { useLanguage } from '../shared/i18n'
 import { translateError } from '../shared/messages'
-import { bible } from '../shared/bridge'
-import { builtInSlideDefaults, type AudienceScriptureCue, type BibleSettings, type Book, type ScriptureCue, type Theme, type Verse } from '../shared/model'
+import { bible, desktop } from '../shared/bridge'
+import { builtInSlideDefaults, translationName, type AudienceScriptureCue, type BibleSettings, type Book, type ScriptureCue, type Theme, type Verse } from '../shared/model'
 import {
   deleteReferenceSegment, formatScriptureCue, lookupReference, normalizeBook, readVerseWindow, referenceSuggestions, verseLabel, verseWindowSize,
   type PassageVerse, type ReferenceSuggestion,
@@ -87,9 +87,13 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
   const translations = settings?.databases.filter(item => item.enabled) ?? []
   const translation = translations.find(item => item.id === (requestedTranslation ?? settings?.defaultId))?.id ?? ''
   const loadingSettings = !settings && !translationError
-  const unavailable = settings && !translation
-    ? translations.length ? t('Choose an enabled translation to edit this cue.') : t('Enable a Bible database in Settings to look up verses.')
-    : ''
+  let unavailable = ''
+  if (settings && !translation) {
+    if (translations.length) unavailable = t('Choose an enabled translation to edit this cue.')
+    else if (!desktop && !settings.databases.length) unavailable = t('Bible translations are available in the desktop app.')
+    else if (!settings.databases.length) unavailable = t('Download a Bible translation in Settings to look up verses.')
+    else unavailable = t('Enable a Bible translation in Settings to look up verses.')
+  }
   const books = bookList?.key === translation ? bookList : undefined
   const bookValues = books && 'values' in books ? books.values : undefined
   const original = bookValues?.find(book => book.id === initial?.book)
@@ -551,7 +555,7 @@ export function ScriptureEditor({ ref, existing, active, settingsRevision, busy,
             {!translation && <option value="" disabled>
               {translations.length ? t('Choose a translation') : settings ? t('No enabled translations') : translationError ? t('Translations unavailable') : t('Loading translations…')}
             </option>}
-            {translations.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
+            {translations.map(option => <option key={option.id} value={option.id}>{translationName(option)}</option>)}
           </select>
           <ChevronDown size={15} aria-hidden="true" />
         </div>
