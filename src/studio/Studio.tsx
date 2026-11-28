@@ -851,7 +851,7 @@ function StudioWorkspace({ saved }: { saved: Project | null }) {
                       onClick={() => setEditor({ kind: 'remove-all' })}>{t('Remove all')}</button>
                     <button className="button" disabled={!dirty || savingPlaylist} onClick={() => setEditor({ kind: 'save-playlist' })}>
                       <Save size={15} />{t('Save')}</button>
-                    <button className="button button-primary" aria-haspopup="dialog" disabled={savingPlaylist}
+                    <button className="button" aria-haspopup="dialog" disabled={savingPlaylist}
                       onClick={() => openCuePicker(active.id)}><Plus size={16} />{t('Add cue')}</button>
                   </div>
                 </div>
